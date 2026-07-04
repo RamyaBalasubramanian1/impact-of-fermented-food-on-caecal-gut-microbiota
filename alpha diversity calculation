@@ -1,0 +1,2782 @@
+#POINT TO NOTE ABOUT THE CHOICE OF DB
+# However, when considering the taxonomic profiles, a more complex picture was
+#evidenced, with 97% and 100% databases performing nearly the same in all the datasets,
+#with the only differences to be accounted for genus-level unclassified taxa. 
+#https://www.biorxiv.org/content/biorxiv/early/2023/04/13/2023.04.12.535864.full.pdf
+library(ggplot2)
+library(picante)
+#install.packages("ggtext")
+library(ggtext)
+library(tibble)
+library(dplyr)
+library(tidyr)
+library(circlize)
+library(RColorBrewer)
+library(compositions)
+library(ComplexHeatmap)
+library(aplot)
+library(vegan)
+library(knitr)
+library(car)
+library(broom)
+library(ggpubr)
+library(lme4)
+library(FSA)
+library(gridExtra)
+library(grid)
+#BiocManager::install("ANCOMBC")
+library(ANCOMBC)
+library(readr)
+#install.packages("ggpicrust2")
+library(ggpicrust2)
+library(tibble)
+library(tidyverse)
+library(ggprism)
+library(patchwork)
+library(ComplexHeatmap)
+library(circlize)
+library(dplyr)
+library(FSA)
+library(plyr)
+#Statistical tools Primarily PERMANOVA, alpha diversity and the CLR transformation.
+library(vegan) #install.packages("vegan")
+library(iNEXT) #install.packages("iNEXT")
+library(Tjazi) #devtools::install_github("thomazbastiaanssen/Tjazi")
+#Data Wrangling
+library(tidyverse) #install.packages("tidyverse")
+library(knitr) #install.packages("knitr")
+library(waldo) #install.packages("waldo")
+#Plotting
+library(ggplot2) #install.packages("ggplot2")
+library(ggforce) #install.packages("ggforce")
+library(patchwork) #install.packages("patchwork")
+library(ggbeeswarm) #install.packages("ggbeeswarm")
+library(metafolio) #install.packages("metafolio")
+library(rstatix)
+#remotes::install_github("Asa12138/pctax")
+#remotes::install_github("Asa12138/pcutils")
+library(pctax)
+# ========data manipulation
+library(dplyr)
+library(pcutils)
+#devtools::install_github("cafferychen777/MicrobiomeStat")
+#install.packages("microeco")
+library(microeco)
+library(MicrobiomeStat)
+#devtools::install_github("jbisanz/qiime2R")
+library(qiime2R)
+library(ggtext)
+library(patchwork)
+# #install.packages(
+#   "microViz",
+#   repos = c(davidbarnett = "https://david-barnett.r-universe.dev", getOption("repos"))
+# )
+suppressPackageStartupMessages(library(microViz))
+setwd("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot kimchi and sauerkraut/16s/output272230")
+library(microbiomeutilities)
+#BiocManager::install("phyloseq")
+library(phyloseq)
+##################################
+##################################
+ASVs <- read_qza("dada2_table.qza")
+#setwd("D:/ecoli_run2/rfiles")
+tree <- read_qza("rooted-tree.qza")
+taxonomy <- read_qza("taxonomy_assignment.qza")
+tax_table <- do.call(rbind, strsplit(as.character(taxonomy$data$Taxon), "; "))
+colnames(tax_table) <- c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+rownames(tax_table) <- taxonomy$data$Feature.ID
+metadata <- read.table("meta.tsv" , sep='\t', header=T, row.names=1, comment="")
+metadata$Sample_ID <- rownames(metadata)
+metadata <- metadata[-c(13, 15, 39:43, 45, 47, 52, 55, 56, 57, 58),]
+physeq <- phyloseq(
+  otu_table(ASVs$data, taxa_are_rows = T),
+  tax_table(tax_table),
+  sample_data(metadata), phy_tree(tree$data))
+ps <- physeq
+
+samples_to_remove <- c("SKC_55_S55", "Zymo_Mock_S56", "Lib_Neg_S57", "PI_6_S58", 
+                       "SKC_13_S13", "SKC_15_S15", "SKC_39_S39", "SKC_40_S40", 
+                       "SKC_41_S41", "SKC_42_S42", "SKC_43_S43", "SKC_45_S45", 
+                       "SKC_47_S47", "SKC_52_S52")#removing teklad diets as they are the controls for the fermented beverages
+
+# Remove the samples from the phyloseq object
+ps_filtered <- prune_samples(!(sample_names(ps) %in% samples_to_remove), ps)
+
+# Check the resulting phyloseq object
+print(ps_filtered)
+
+ps <- ps_filtered
+
+tax <- as.data.frame(tax_table(ps))
+
+#MAKING THIS CLEAN
+taxa_names(ps)[1:5]
+# find and substitute
+taxa_names(ps) <- gsub(taxa_names(ps), pattern = "d__", replacement = "")  
+
+# Check again Taxonomy table
+phyloseq::tax_table(ps)[1:3,1:3] # check for my table show me [1 to 3 otu ids, 1 to 3 first three ranks]. 
+# find and substitute
+taxa_names(ps) <- gsub(taxa_names(ps), pattern = "denovo", replacement = "OTU-")  
+tax_table(ps)[, colnames(tax_table(ps))] <- gsub(tax_table(ps)[, colnames(tax_table(ps))],     pattern = "[a-z]__", replacement = "")
+colnames(tax_table(ps))
+phyloseq::tax_table(ps)[1:3,1:3] # check for my table show me [1 to 3 otu ids, 1 to 3 first three ranks].
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="=*",replacement="")
+########################################################################################
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="g__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="f__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="o__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="c__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="p__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="d__",replacement="")
+#ps = subset_taxa(ps, Kingdom == "d__Bacteria")
+head(tax_table(ps))
+########################################################################################
+##we are going to plot the following alpha diversity
+#observed
+#dominance
+#faith
+#shannon if observed and dominance is not done
+ps <- prune_taxa(taxa_sums(ps) > 0, ps)
+#note that dada 2 removes singletons
+#so chao1 not appropriate  because it is singleton sensitive 
+ps.gen <- phyloseq::tax_glom(ps, "Genus", NArm = TRUE)
+ps.family <- phyloseq::tax_glom(ps, "Family", NArm = TRUE)
+ps.ord <- phyloseq::tax_glom(ps, "Order", NArm = TRUE)
+ps.phylum <- phyloseq::tax_glom(ps, "Phylum", NArm = TRUE)
+###########
+################################
+#calculating observed richness
+alphadivgen <- estimate_richness(ps.gen, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.gen)), by = "Sample_ID") 
+alphadivfam <- estimate_richness(ps.family, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.family)), by = "Sample_ID") 
+alphadivord <- estimate_richness(ps.ord, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.ord)), by = "Sample_ID") 
+alphadivphy <- estimate_richness(ps.phylum, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.phylum)), by = "Sample_ID") 
+#####################
+shapiro.test(alphadivgen$Observed)#normally distributed
+shapiro.test(alphadivfam$Observed)#normally distributed
+shapiro.test(alphadivord$Observed)#normally distributed
+shapiro.test(alphadivphy$Observed)#not normally distributed
+leveneTest(Observed ~ Diet, data = alphadivgen)#variance is =al
+leveneTest(Observed ~ Diet, data = alphadivfam)#variance is =al
+leveneTest(Observed ~ Diet, data = alphadivord)#variance is =al
+leveneTest(Observed ~ Diet, data = alphadivphy)#variance is =al
+anova_result <- aov(Observed ~ Diet, data = alphadivgen)
+summary(anova_result)#ns
+anova_result <- aov(Observed ~ Diet, data = alphadivfam)
+summary(anova_result)#s
+TukeyHSD(anova_result)
+# Extract TukeyHSD results and reformat
+tukey_results <- TukeyHSD(anova_result)$Diet
+significance <- as.data.frame(tukey_results) %>%
+  rownames_to_column(var = "comparison") %>%
+  separate(comparison, into = c("group1", "group2"), sep = "-")
+anova_result <- aov(Observed ~ Diet, data = alphadivord)
+summary(anova_result)#ns
+kruskal.test(Observed ~ Diet, data = alphadivphy)#ns
+#####################
+#####################
+#including library size
+#calculating observed richness
+alphadivgen <- estimate_richness(ps.gen, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.gen)), by = "Sample_ID") 
+alphadivgen$LibrarySize <- sample_sums(ps.gen)
+alphadivfam <- estimate_richness(ps.family, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.family)), by = "Sample_ID") 
+alphadivfam$LibrarySize <- sample_sums(ps.family)
+alphadivord <- estimate_richness(ps.ord, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.ord)), by = "Sample_ID") 
+alphadivord$LibrarySize <- sample_sums(ps.ord)
+alphadivphy <- estimate_richness(ps.phylum, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.phylum)), by = "Sample_ID") 
+###################
+# genus level
+anova_result <- aov(Observed ~ Diet + LibrarySize + Diet:LibrarySize, data = alphadivgen)
+summary(anova_result)
+#######################
+
+######################
+p <- ggplot(alphadivgen, aes(x = Diet, y = Observed, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) + # Boxplot without outliers
+  geom_jitter(width = 0.2, alpha = 0.6)  +
+  labs(
+    title = "Observed Richness by Diet-Genera ",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), # Tilt x-axis labels
+    legend.position = "none"
+  )
+#####################################
+q <- ggplot(alphadivfam, aes(x = Diet, y = Observed, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) + # Boxplot without outliers
+  geom_jitter(width = 0.2, alpha = 0.6)  + 
+  geom_signif(
+    comparisons = list(
+      c("SAU", "CAB")),
+    annotations = c( "**"), # Add significance stars manually
+    y_position = c(60), # Adjust positions of significance bars
+    tip_length = 0.05 # Length of the tips of significance bars
+  )+
+  labs(
+    title = "Observed Richness by Diet-Family",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), # Tilt x-axis labels
+    legend.position = "none"
+  )
+####################################
+r <- ggplot(alphadivord, aes(x = Diet, y = Observed, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) + # Boxplot without outliers
+  geom_jitter(width = 0.2, alpha = 0.6)  +
+  labs(
+    title = "Observed Richness by Diet-Order",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), # Tilt x-axis labels
+    legend.position = "none"
+  )
+#####################################
+s <- ggplot(alphadivphy, aes(x = Diet, y = Observed, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) + # Boxplot without outliers
+  geom_jitter(width = 0.2, alpha = 0.6)  +
+  labs(
+    title = "Observed Richness by Diet-Phylum",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), # Tilt x-axis labels
+    legend.position = "none"
+  )
+#########################
+t <- p + q+ r+s
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/Figures/obs_richness.svg", plot = t, width = 12, height = 6, units = "in")
+################################################################
+################################################################
+alphadivgen <- estimate_richness(ps.gen, measures = "shannon") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.gen)), by = "Sample_ID") 
+alphadivgen$LibrarySize <- sample_sums(ps.gen)
+alphadivfam <- estimate_richness(ps.family, measures = "shannon") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.family)), by = "Sample_ID") 
+alphadivfam$LibrarySize <- sample_sums(ps.family)
+alphadivord <- estimate_richness(ps.ord, measures = "shannon") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.ord)), by = "Sample_ID") 
+alphadivord$LibrarySize <- sample_sums(ps.ord)
+alphadivphy <- estimate_richness(ps.phylum, measures = "shannon") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.phylum)), by = "Sample_ID") 
+
+anova_result <- aov(Shannon ~ Diet + LibrarySize + Diet:LibrarySize, data = alphadivgen)
+summary(anova_result)
+anova_result <- aov(Shannon ~ Diet + LibrarySize + Diet:LibrarySize, data = alphadivfam)
+summary(anova_result)
+anova_result <- aov(Shannon ~ Diet + LibrarySize + Diet:LibrarySize, data = alphadivord)
+summary(anova_result)
+anova_result <- aov(Shannon ~ Diet, data = alphadivphy)
+summary(anova_result)
+###########
+###########
+alphadivgen <- estimate_richness(ps.gen, measures = "simpson") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.gen)), by = "Sample_ID") 
+alphadivgen$LibrarySize <- sample_sums(ps.gen)
+alphadivfam <- estimate_richness(ps.family, measures = "simpson") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.family)), by = "Sample_ID") 
+alphadivfam$LibrarySize <- sample_sums(ps.family)
+alphadivord <- estimate_richness(ps.ord, measures = "simpson") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.ord)), by = "Sample_ID") 
+alphadivord$LibrarySize <- sample_sums(ps.ord)
+alphadivphy <- estimate_richness(ps.phylum, measures = "simpson") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.phylum)), by = "Sample_ID") 
+anova_result <- aov(Simpson ~ Diet + LibrarySize + Diet:LibrarySize, data = alphadivgen)
+summary(anova_result)
+anova_result <- aov(Simpson ~ Diet + LibrarySize + Diet:LibrarySize, data = alphadivfam)
+summary(anova_result)
+anova_result <- aov(Simpson ~ Diet + LibrarySize + Diet:LibrarySize, data = alphadivord)
+summary(anova_result)
+anova_result <- aov(Simpson ~ Diet, data = alphadivphy)
+summary(anova_result)
+#######################################################
+#######################################################
+#######################################################
+library(microbiome)
+J <- evenness(ps.gen, index = "pielou")
+H <- evenness(ps.ord, index = "pielou")
+I <- evenness(ps.family, index = "pielou")
+M <- evenness(ps.phylum, index = "pielou")
+
+pielou_df <- data.frame(
+  Sample_ID = rownames(J),
+  Pielou = J$pielou
+)
+pielou_df <- merge(
+  pielou_df,
+  metadata,
+  by = "Sample_ID"
+)
+head(pielou_df)
+shapiro.test(pielou_df$Pielou)
+leveneTest(Pielou ~ Diet, data = pielou_df)
+mod <- aov(Pielou ~ Diet, data = pielou_df)
+summary(mod)
+pielou_df <- data.frame(
+  Sample_ID = rownames(H),
+  Pielou = H$pielou
+)
+pielou_df <- merge(
+  pielou_df,
+  metadata,
+  by = "Sample_ID"
+)
+head(pielou_df)
+shapiro.test(pielou_df$Pielou)
+leveneTest(Pielou ~ Diet, data = pielou_df)
+mod <- aov(Pielou ~ Diet, data = pielou_df)
+summary(mod)
+pielou_df <- data.frame(
+  Sample_ID = rownames(I),
+  Pielou = I$pielou
+)
+pielou_df <- merge(
+  pielou_df,
+  metadata,
+  by = "Sample_ID"
+)
+head(pielou_df)
+shapiro.test(pielou_df$Pielou)
+leveneTest(Pielou ~ Diet, data = pielou_df)
+mod <- aov(Pielou ~ Diet, data = pielou_df)
+summary(mod)
+pielou_df <- data.frame(
+  Sample_ID = rownames(M),
+  Pielou = M$pielou
+)
+pielou_df <- merge(
+  pielou_df,
+  metadata,
+  by = "Sample_ID"
+)
+head(pielou_df)
+shapiro.test(pielou_df$Pielou)
+leveneTest(Pielou ~ Diet, data = pielou_df)
+mod <- aov(Pielou ~ Diet, data = pielou_df)
+summary(mod)
+
+######################
+#remotes::install_github("microbiome/microbiome")
+#library(microbiome)
+dom <- dominance(ps, rank = 6, relative = TRUE, aggregate = TRUE)
+dom2 <- dominance(ps, rank = 5, relative = TRUE, aggregate = TRUE)
+#################################
+gen <- cbind(dom, metadata)
+shapiro.test(gen$dbp)
+leveneTest(dbp ~ Diet, data = gen)
+kruskal.test(dbp ~ Diet, data = gen)
+p <- ggplot(gen, aes(x = Diet, y = dbp, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) +  # Boxplot without showing outliers
+  geom_jitter(width = 0.2, alpha = 0.6) +  # Jitter for individual points
+  labs(
+    title = "Dominance across diet Genera",
+    x = "Diet",
+    y = "dbp"
+  ) +
+  theme_classic() +  # Clean white background
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Tilt x-axis labels
+    legend.position = "none"
+  )
+#################################
+fam <- cbind(dom2, metadata)
+shapiro.test(fam$dbp)
+leveneTest(dbp ~ Diet, data = fam)
+kruskal.test(dbp ~ Diet, data = fam)
+q <- ggplot(fam, aes(x = Diet, y = dbp, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) +  # Boxplot without showing outliers
+  geom_jitter(width = 0.2, alpha = 0.6) +  # Jitter for individual points
+  labs(
+    title = "Dominance across diet-Family",
+    x = "Diet",
+    y = "dbp"
+  ) +
+  theme_classic() +  # Clean white background
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Tilt x-axis labels
+    legend.position = "none"
+  )
+r <- p + q
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/Figures/dominance.svg", plot = r, width = 12, height = 6, units = "in")
+#################################
+#tells you who is dominant
+#tells you who is dominant
+x.d <- dominant_taxa(ps.gen,level = "Genus", group="diet")
+head(x.d$dominant_overview)
+all_g <- x.d$all_data
+stat_g <- x.d$dominant_overview
+stat_g %>%
+  group_by(diet) %>%
+  top_n(1, wt = rel.freq)
+x.d <- dominant_taxa(ps.family,level = "Family", group="diet")
+head(x.d$dominant_overview)
+all_f <- x.d$all_data
+stat_f <- x.d$dominant_overview
+stat_f %>%
+  group_by(diet) %>%
+  top_n(1, wt = rel.freq)
+##########################################
+#faith phylogenetic distance
+#install.packages("picante")#need for faith pd distance
+library(picante)
+otu <- as(otu_table(ps.gen), "matrix")
+if (taxa_are_rows(ps.gen)) {
+  otu <- t(otu)
+}
+comm.pd <- pd(otu,phy_tree(ps.gen))
+head(comm.pd)
+genera <- cbind(comm.pd, metadata)
+shapiro.test(genera$PD)
+leveneTest(PD ~ Diet, data = genera)
+kruskal.test(PD ~ Diet, data = genera)
+##############
+p <-ggplot(genera, aes(x = Diet, y = PD, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(
+    title = "Faith's Phylogenetic Diversity by Diet",
+    x = "Diet",
+    y = "Faith's PD"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+############
+otu <- as(otu_table(ps.family), "matrix")
+if (taxa_are_rows(ps.family)) {
+  otu <- t(otu)
+}
+comm.pd <- pd(otu,phy_tree(ps.family))
+head(comm.pd)
+fam <- cbind(comm.pd, metadata)
+shapiro.test(fam$PD)
+leveneTest(PD ~ Diet, data = fam)
+kruskal.test(PD ~ Diet, data = fam)
+##############
+q <- ggplot(fam, aes(x = Diet, y = PD, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(
+    title = "Faith's Phylogenetic Diversity by Diet",
+    x = "Diet",
+    y = "Faith's PD"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+r <- p + q
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/Figures/FPD.svg", plot = r, width = 12, height = 6, units = "in")
+#####################################################################################################################################
+#######################################################################################################################################
+######################################
+######################################
+######################################
+######################################
+#a more controlled method to do pca plot
+##########################
+tax <- as.data.frame(tax_table(ps.gen))
+tax <- tax[,-7]
+################################
+
+otu <- as.data.frame(otu_table(ps.gen))
+
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+
+# Merge PCA scores with metadata
+metadata$SampleID <- rownames(metadata)
+pca_merged <- merge(pca_df, metadata, by = "SampleID")
+
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+p <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = Diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = Diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of genera composition",
+    x = pc1_label,
+    y = pc2_label
+  )
+# PERMANOVA Analysis
+# Filter metadata to only include samples in the OTU table
+otu_samples <- rownames(clr)  # Sample IDs in OTU table
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+
+metadata_filtered$Cage_group <- gsub("[0-9]+$", "", metadata_filtered$Cage)
+# Calculate Bray-Curtis distance matrix
+dist_matrix <- vegdist(clr, method = "euclidean")
+
+# PERMANOVA
+adonis2(dist_matrix ~ Diet, data = metadata_filtered)
+adonis2(dist_matrix ~  Cage_group, data = metadata_filtered)
+adonis2(dist_matrix ~  Diet + Cage_group, data = metadata_filtered, permutations = 999)
+adonis2(dist_matrix ~ Category, data = metadata_filtered)
+##############################################################
+##############################################################
+tax <- as.data.frame(tax_table(ps.family))
+tax <- tax[,-7]
+################################
+#doing the same for family
+otu <- as.data.frame(otu_table(ps.family))
+
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+
+# Merge PCA scores with metadata
+metadata$SampleID <- rownames(metadata)
+pca_merged <- merge(pca_df, metadata, by = "SampleID")
+
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+q <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = Diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = Diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of Family composition",
+    x = pc1_label,
+    y = pc2_label
+  )
+# PERMANOVA Analysis
+# Filter metadata to only include samples in the OTU table
+otu_samples <- rownames(clr)  # Sample IDs in OTU table
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+# Calculate Bray-Curtis distance matrix
+dist_matrix <- vegdist(clr, method = "euclidean")
+metadata_filtered$Cage_group <- gsub("[0-9]+$", "", metadata_filtered$Cage)
+# PERMANOVA
+adonis2(dist_matrix ~ Diet, data = metadata_filtered)
+adonis2(dist_matrix ~ Cage_group, data = metadata_filtered)
+adonis2(dist_matrix ~ Diet+Cage_group, data = metadata_filtered)
+adonis2(dist_matrix ~ Category, data = metadata_filtered)
+###########################################################
+tax <- as.data.frame(tax_table(ps.ord))
+tax <- tax[,-7]
+################################
+#doing the same for order
+otu <- as.data.frame(otu_table(ps.ord))
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+
+# Merge PCA scores with metadata
+metadata$SampleID <- rownames(metadata)
+pca_merged <- merge(pca_df, metadata, by = "SampleID")
+
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+r <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = Diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = Diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of order level composition",
+    x = pc1_label,
+    y = pc2_label
+  )
+# PERMANOVA Analysis
+# Filter metadata to only include samples in the OTU table
+otu_samples <- rownames(clr)  # Sample IDs in OTU table
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+# Calculate Bray-Curtis distance matrix
+dist_matrix <- vegdist(clr, method = "euclidean")
+
+metadata_filtered$Cage_group <- gsub("[0-9]+$", "", metadata_filtered$Cage)# PERMANOVA
+adonis2(dist_matrix ~ Diet, data = metadata_filtered)
+adonis2(dist_matrix ~ Cage_group, data = metadata_filtered)
+adonis2(dist_matrix ~ Diet + Cage_group, data = metadata_filtered)
+adonis2(dist_matrix ~ Category, data = metadata_filtered)
+#############################################################
+tax <- as.data.frame(tax_table(ps.phylum))
+tax <- tax[,-7]
+################################
+#doing the same for phylum
+otu <- as.data.frame(otu_table(ps.phylum))
+
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+
+# Merge PCA scores with metadata
+metadata$SampleID <- rownames(metadata)
+pca_merged <- merge(pca_df, metadata, by = "SampleID")
+
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+s <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = Diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = Diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of phylum level classification",
+    x = pc1_label,
+    y = pc2_label
+  )
+# PERMANOVA Analysis
+# Filter metadata to only include samples in the OTU table
+otu_samples <- rownames(clr)  # Sample IDs in OTU table
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+# Calculate Bray-Curtis distance matrix
+dist_matrix <- vegdist(clr, method = "euclidean")
+metadata_filtered$Cage_group <- gsub("[0-9]+$", "", metadata_filtered$Cage)
+# PERMANOVA
+adonis2(dist_matrix ~ Diet, data = metadata_filtered)
+adonis2(dist_matrix ~ Cage_group, data = metadata_filtered)
+adonis2(dist_matrix ~ Category, data = metadata_filtered)
+##################
+t <- p +q 
+u <- r + s
+v <- t/u
+
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/pca_taxa.svg", plot = v, width = 12, height = 6, units = "in")
+####################################
+
+# Step 1: Extract genus-level counts (samples x genera)
+counts <- as(otu_table(ps.gen), "matrix")
+if (taxa_are_rows(ps.gen)) counts <- t(counts)
+
+# Step 2: Assign Genus names as column names
+genus <- as.character(tax_table(ps.gen)[, "Genus"])
+genus[is.na(genus)] <- taxa_names(ps.gen)[is.na(genus)]
+colnames(counts) <- genus
+counts <- counts[metadata$Sample_ID, ]
+#Fork off form the untransformed counts table
+bargenus <- counts
+bargenus <- data.frame(t(bargenus))
+#Make into relative abundance
+bargenus <- apply(bargenus, 2, function(i) i/sum(i))
+#Define a cutoff for rare taxa in several steps:
+#first, determine the max % abundance every feature ever shows up at
+maxabundances <- apply(bargenus, 1, max)
+#Meanwhile, transpose the count table for future wrangling.
+bargenus <- data.frame(t(bargenus))
+#For every sample, sum up all rare taxa ( < 1% at their highest in this case)
+bargenus$`Rare Taxa` <- rowSums(bargenus[,maxabundances < 0.01], na.rm = TRUE)
+#Remove the individual rare taxa now that they're summed up
+bargenus = bargenus[,c(maxabundances > 0.01, T) ] #`T` to include the `Rare Taxa`.
+#Prepare the data for ggplot by adding in metadata here
+bargenus$Diet = metadata$Diet
+bargenus$ID = metadata$Sample_ID
+#Wrangle the data to long format for easy plotting
+barlong = bargenus %>%
+  pivot_longer(!c(ID, Diet), names_to = c("Microbe"), values_to = "value") %>%
+  mutate(Microbe = str_replace(Microbe, ".*_or_", ""))
+cols = metafolio::gg_color_hue(length(unique(barlong$Microbe)))
+cols[unique(barlong$Microbe)=="Rare Taxa"]="dark gray"
+##########
+p <- barlong %>%
+  ggplot(aes(x = ID, y = value, fill = Microbe)) +
+  geom_bar(stat = "identity", col = "black", linewidth = .2, width = 1) +
+  facet_row(~Diet, scales = "free_x") +
+  #Adjust layout and appearance
+  scale_fill_manual(values = cols, labels = unique(sub(".*ales_", "", barlong$Microbe))) +
+  scale_y_continuous(expand = c(0, 0)) +
+  guides(fill = guide_legend(ncol = 1, keyheight = 1, title = "Legend")) +
+  theme_bw() + xlab("") + ylab("Proportion") +
+  theme(text = element_text(size = 14), axis.text.x = element_blank())
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/stcked_barplot_kimsau.svg", plot = p, width = 6, height = 20, units = "in")
+######################################
+#############da testing###############
+######################################
+#https://www.nicholas-ollberding.com/post/introduction-to-the-statistical-analysis-of-microbiome-data-in-r/
+#remotes::install_github("yiluheihei/microbiomeMarker")
+library(microbiomeMarker)
+library(ggrepel)
+ps_filtered <- subset_samples(ps.gen, Diet %in% c("KIM", "CAB"))
+sample_data(ps_filtered)$Diet <- factor(sample_data(ps_filtered)$Diet, levels = c("KIM", "CAB"))
+
+conds <- as.character(sample_data(ps_filtered)$Diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+
+########
+# Extract and prep taxonomy
+tax <- as.data.frame(tax_table(ps_filtered)) %>%
+  mutate(OTU = rownames(.)) %>%
+  select(OTU, Genus)
+
+# Prep results
+df <- as.data.frame(aldex2_da) %>%
+  mutate(OTU = rownames(.)) %>%
+  left_join(tax, by = "OTU") %>%
+  mutate(
+    Genus = ifelse(is.na(Genus) | Genus == "", OTU, Genus),
+    neglog_p = -log10(wi.ep),
+    significant = wi.eBH < 0.05,
+    enriched_in = case_when(
+      significant & diff.btw > 0 ~ "KIM",
+      significant & diff.btw < 0 ~ "CAB",
+      TRUE ~ "NS"
+    )
+  )
+p <- ggplot(df, aes(x = diff.btw, y = neglog_p, label = Genus)) +
+  geom_point(aes(color = enriched_in), size = 2, alpha = 0.8) +
+  geom_text_repel(
+    data = filter(df, enriched_in %in% c("KIM", "CAB")),
+    max.overlaps = 15,
+    size = 3
+  ) +
+  scale_color_manual(
+    values = c("KIM" = "red", "CAB" = "blue", "NS" = "gray"),
+    name = "Enriched In"
+  ) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Taxa Enriched in KIM vs CAB (ALDEx2)",
+    x = "Median Difference (KIM - CAB)",
+    y = "-log10(p-value)"
+  )
+write.csv(df, "C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/aldex_kim_cab.csv")
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/DA_kim_cab.svg", plot = p, width = 6, height = 8, units = "in")
+###################
+##################
+ps_filtered <- subset_samples(ps.gen, Diet %in% c("SAU", "CAB"))
+sample_data(ps_filtered)$Diet <- factor(sample_data(ps_filtered)$Diet, levels = c("SAU", "CAB"))
+
+conds <- as.character(sample_data(ps_filtered)$Diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+
+########
+# Extract and prep taxonomy
+tax <- as.data.frame(tax_table(ps_filtered)) %>%
+  mutate(OTU = rownames(.)) %>%
+  select(OTU, Genus)
+
+# Prep results
+df <- as.data.frame(aldex2_da) %>%
+  mutate(OTU = rownames(.)) %>%
+  left_join(tax, by = "OTU") %>%
+  mutate(
+    Genus = ifelse(is.na(Genus) | Genus == "", OTU, Genus),
+    neglog_p = -log10(wi.ep),
+    significant = wi.eBH < 0.05,
+    enriched_in = case_when(
+      significant & diff.btw > 0 ~ "SAU",
+      significant & diff.btw < 0 ~ "CAB",
+      TRUE ~ "NS"
+    )
+  )
+p <- ggplot(df, aes(x = diff.btw, y = neglog_p, label = Genus)) +
+  geom_point(aes(color = enriched_in), size = 2, alpha = 0.8) +
+  geom_text_repel(
+    data = dplyr::filter(df, enriched_in %in% c("SAU", "CAB")),
+    max.overlaps = 15,
+    size = 3
+  ) +
+  scale_color_manual(
+    values = c("SAU" = "red", "CAB" = "blue", "NS" = "gray"),
+    name = "Enriched In"
+  ) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Taxa Enriched in SAU vs CAB (ALDEx2)",
+    x = "Median Difference (SAU - CAB)",
+    y = "-log10(p-value)"
+  )
+write.csv(df, "C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/aldex_saucab.csv")
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/DA_sau_cab.svg", plot = p, width = 6, height = 8, units = "in")
+##############
+ps_filtered <- subset_samples(ps.gen, Diet %in% c("CAB", "TM"))
+sample_data(ps_filtered)$Diet <- factor(sample_data(ps_filtered)$Diet, levels = c("CAB", "TM"))
+
+conds <- as.character(sample_data(ps_filtered)$Diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+
+########
+# Extract and prep taxonomy
+tax <- as.data.frame(tax_table(ps_filtered)) %>%
+  mutate(OTU = rownames(.)) %>%
+  select(OTU, Genus)
+
+# Prep results
+df <- as.data.frame(aldex2_da) %>%
+  mutate(OTU = rownames(.)) %>%
+  left_join(tax, by = "OTU") %>%
+  mutate(
+    Genus = ifelse(is.na(Genus) | Genus == "", OTU, Genus),
+    neglog_p = -log10(wi.ep),
+    significant = wi.eBH < 0.05,
+    enriched_in = case_when(
+      significant & diff.btw > 0 ~ "CAB",
+      significant & diff.btw < 0 ~ "TM",
+      TRUE ~ "NS"
+    )
+  )
+p <- ggplot(df, aes(x = diff.btw, y = neglog_p, label = Genus)) +
+  geom_point(aes(color = enriched_in), size = 2, alpha = 0.8) +
+  geom_text_repel(
+    data = filter(df, enriched_in %in% c("CAB", "TM")),
+    max.overlaps = 15,
+    size = 3
+  ) +
+  scale_color_manual(
+    values = c("CAB" = "red", "TM" = "blue", "NS" = "gray"),
+    name = "Enriched In"
+  ) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Taxa Enriched in CAB vs TM (ALDEx2)",
+    x = "Median Difference (CAB - TM)",
+    y = "-log10(p-value)"
+  )
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/DA_KIM_TM.svg", plot = p, width = 6, height = 8, units = "in")
+###################################################
+###################################################
+ps_filtered <- subset_samples(ps.gen, Diet %in% c("SAU", "TM"))
+sample_data(ps_filtered)$Diet <- factor(sample_data(ps_filtered)$Diet, levels = c("SAU", "TM"))
+
+conds <- as.character(sample_data(ps_filtered)$Diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+
+########
+# Extract and prep taxonomy
+tax <- as.data.frame(tax_table(ps_filtered)) %>%
+  mutate(OTU = rownames(.)) %>%
+  select(OTU, Genus)
+
+# Prep results
+df <- as.data.frame(aldex2_da) %>%
+  mutate(OTU = rownames(.)) %>%
+  left_join(tax, by = "OTU") %>%
+  mutate(
+    Genus = ifelse(is.na(Genus) | Genus == "", OTU, Genus),
+    neglog_p = -log10(wi.ep),
+    significant = wi.eBH < 0.05,
+    enriched_in = case_when(
+      significant & diff.btw > 0 ~ "TM",
+      significant & diff.btw < 0 ~ "SAU",
+      TRUE ~ "NS"
+    )
+  )
+p <- ggplot(df, aes(x = diff.btw, y = neglog_p, label = Genus)) +
+  geom_point(aes(color = enriched_in), size = 2, alpha = 0.8) +
+  geom_text_repel(
+    data = filter(df, enriched_in %in% c("SAU", "TM")),
+    max.overlaps = 15,
+    size = 3
+  ) +
+  scale_color_manual(
+    values = c("SAU" = "red", "TM" = "blue", "NS" = "gray"),
+    name = "Enriched In"
+  ) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Taxa Enriched in SAU vs TM (ALDEx2)",
+    x = "Median Difference (SAU - TM)",
+    y = "-log10(p-value)"
+  )
+write.csv(df, "C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/aldex_sau_tm.csv")
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/DA_SAU_TM.svg", plot = p, width = 6, height = 8, units = "in")
+############################################################################################################################################
+ps_filtered <- subset_samples(ps.gen, Diet %in% c("KIM", "TM"))
+sample_data(ps_filtered)$Diet <- factor(sample_data(ps_filtered)$Diet, levels = c("KIM", "TM"))
+
+conds <- as.character(sample_data(ps_filtered)$Diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+
+########
+# Extract and prep taxonomy
+tax <- as.data.frame(tax_table(ps_filtered)) %>%
+  mutate(OTU = rownames(.)) %>%
+  select(OTU, Genus)
+
+# Prep results
+df <- as.data.frame(aldex2_da) %>%
+  mutate(OTU = rownames(.)) %>%
+  left_join(tax, by = "OTU") %>%
+  mutate(
+    Genus = ifelse(is.na(Genus) | Genus == "", OTU, Genus),
+    neglog_p = -log10(wi.ep),
+    significant = wi.eBH < 0.05,
+    enriched_in = case_when(
+      significant & diff.btw < 0 ~ "KIM",
+      significant & diff.btw > 0 ~ "TM",
+      TRUE ~ "NS"
+    )
+  )
+p <- ggplot(df, aes(x = diff.btw, y = neglog_p, label = Genus)) +
+  geom_point(aes(color = enriched_in), size = 2, alpha = 0.8) +
+  geom_text_repel(
+    data = filter(df, enriched_in %in% c("KIM", "TM")),
+    max.overlaps = 15,
+    size = 3
+  ) +
+  scale_color_manual(
+    values = c("KIM" = "red", "TM" = "blue", "NS" = "gray"),
+    name = "Enriched In"
+  ) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Taxa Enriched in KIM vs TM (ALDEx2)",
+    x = "Median Difference (KIM - TM)",
+    y = "-log10(p-value)"
+  )
+write.csv(df, "C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/aldex_kim_tm.csv")
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/DA_KIM_TM.svg", plot = p, width = 6, height = 8, units = "in")
+############################################################################################################################################
+ps_filtered <- subset_samples(ps.gen, Diet %in% c("SAU", "KIM"))
+sample_data(ps_filtered)$Diet <- factor(sample_data(ps_filtered)$Diet, levels = c("SAU", "KIM"))
+
+conds <- as.character(sample_data(ps_filtered)$Diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+
+########
+# Extract and prep taxonomy
+tax <- as.data.frame(tax_table(ps_filtered)) %>%
+  mutate(OTU = rownames(.)) %>%
+  select(OTU, Genus)
+
+# Prep results
+df <- as.data.frame(aldex2_da) %>%
+  mutate(OTU = rownames(.)) %>%
+  left_join(tax, by = "OTU") %>%
+  mutate(
+    Genus = ifelse(is.na(Genus) | Genus == "", OTU, Genus),
+    neglog_p = -log10(wi.ep),
+    significant = wi.eBH < 0.05,
+    enriched_in = case_when(
+      significant & diff.btw > 0 ~ "SAU",
+      significant & diff.btw < 0 ~ "KIM",
+      TRUE ~ "NS"
+    )
+  )
+p <- ggplot(df, aes(x = diff.btw, y = neglog_p, label = Genus)) +
+  geom_point(aes(color = enriched_in), size = 2, alpha = 0.8) +
+  geom_text_repel(
+    data = filter(df, enriched_in %in% c("SAU", "KIM")),
+    max.overlaps = 15,
+    size = 3
+  ) +
+  scale_color_manual(
+    values = c("SAU" = "red", "KIM" = "blue", "NS" = "gray"),
+    name = "Enriched In"
+  ) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Taxa Enriched in SAU vs KIM (ALDEx2)",
+    x = "Median Difference (SAU - KIM)",
+    y = "-log10(p-value)"
+  )
+write.csv(df, "C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/aldex_kim_sau.csv")
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/DA_KIM_sau.svg", plot = p, width = 6, height = 8, units = "in")
+##########################
+##########################
+##########################
+##########################
+###########################
+###########################
+###########################
+###########################
+###########################
+###########################
+############################################################################################################################################
+############DOING THE SAME FOR FIGTEA#######################################################################################################
+setwd("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/16s/final_With_controls")
+# Importing ASVs abundance file
+ASVs <- read_qza("merged_table.qza")
+#setwd("D:/ecoli_run2/rfiles")
+tree <- read_qza("rooted-tree.qza")
+taxonomy <- read_qza("m_taxonomy_assignment.qza")
+metadata <- read.table("metadata_final.tsv" , sep='\t', header=T, row.names=1, comment="")
+# Convert row names into a column named Sample_ID while retaining the row names
+# Duplicate row names into a new column called Sample_ID while retaining row names
+metadata$Sample_ID <- rownames(metadata)
+metadata <- metadata[-c(25:31),]
+metadata$plate <- ifelse(grepl("^SKC", metadata$Sample_ID), 2, 1)
+levels(metadata$diet)[levels(metadata$diet) == "sc"] <- "standard diet"
+tax_table <- do.call(rbind, strsplit(as.character(taxonomy$data$Taxon), "; "))
+colnames(tax_table) <- c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+rownames(tax_table) <- taxonomy$data$Feature.ID
+physeq <- phyloseq(
+  otu_table(ASVs$data, taxa_are_rows = T),
+  tax_table(tax_table),
+  sample_data(metadata), phy_tree(tree$data))
+
+ps <- physeq
+otu <- as.data.frame(otu_table(ps))
+#########################################
+tax <- as.data.frame(tax_table(ps))
+
+#MAKING THIS CLEAN
+taxa_names(ps)[1:5]
+# find and substitute
+taxa_names(ps) <- gsub(taxa_names(ps), pattern = "d__", replacement = "")  
+
+# Check again Taxonomy table
+phyloseq::tax_table(ps)[1:3,1:3] # check for my table show me [1 to 3 otu ids, 1 to 3 first three ranks]. 
+# find and substitute
+taxa_names(ps) <- gsub(taxa_names(ps), pattern = "denovo", replacement = "OTU-")  
+tax_table(ps)[, colnames(tax_table(ps))] <- gsub(tax_table(ps)[, colnames(tax_table(ps))],     pattern = "[a-z]__", replacement = "")
+colnames(tax_table(ps))
+phyloseq::tax_table(ps)[1:3,1:3] # check for my table show me [1 to 3 otu ids, 1 to 3 first three ranks].
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="=*",replacement="")
+########################################################################################
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="g__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="f__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="o__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="c__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="p__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="d__",replacement="")
+#ps = subset_taxa(ps, Kingdom == "d__Bacteria")
+head(tax_table(ps))
+########################################################################################
+##we are going to plot the following alpha diversity
+#observed
+#dominance
+#faith
+#shannon if observed and dominance is not done
+ps <- prune_taxa(taxa_sums(ps) > 0, ps)
+#note that dada 2 removes singletons
+#so chao1 not appropriate  because it is singleton sensitive 
+ps.gen <- phyloseq::tax_glom(ps, "Genus", NArm = TRUE)
+ps.family <- phyloseq::tax_glom(ps, "Family", NArm = TRUE)
+ps.ord <- phyloseq::tax_glom(ps, "Order", NArm = TRUE)
+ps.phylum <- phyloseq::tax_glom(ps, "Phylum", NArm = TRUE)
+###########
+
+################################
+#calculating observed richness
+alphadivgen <- estimate_richness(ps.gen, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.gen)), by = "Sample_ID") 
+alphadivgen$LibrarySize <- sample_sums(ps.gen)
+alphadivfam <- estimate_richness(ps.family, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.family)), by = "Sample_ID") 
+alphadivfam$LibrarySize <- sample_sums(ps.family)
+alphadivord <- estimate_richness(ps.ord, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.ord)), by = "Sample_ID") 
+alphadivord$LibrarySize <- sample_sums(ps.ord)
+alphadivphy <- estimate_richness(ps.phylum, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.phylum)), by = "Sample_ID") 
+#######################################################################################
+# genus level
+anova_result <- aov(Observed ~ diet + LibrarySize + diet:LibrarySize, data = alphadivgen)
+summary(anova_result)
+#######################
+#LibrarySize is adjusted out globally
+lm_cov <- lm(Observed ~ LibrarySize, data = alphadivgen)
+alphadiv_adj <- alphadivgen %>%
+  mutate(adj_resid = resid(lm_cov))
+
+anova_adj <- aov(adj_resid ~ diet, data = alphadiv_adj)
+summary(anova_adj)
+#############
+lm_cov <- lm(Observed ~ LibrarySize, data = alphadivfam)
+alphadiv_adj <- alphadivfam %>%
+  mutate(adj_resid = resid(lm_cov))
+
+anova_adj <- aov(adj_resid ~ diet, data = alphadiv_adj)
+summary(anova_adj)
+########################
+lm_cov <- lm(Observed ~ LibrarySize, data = alphadivord)
+alphadiv_adj <- alphadivord %>%
+  mutate(adj_resid = resid(lm_cov))
+
+anova_adj <- aov(adj_resid ~ diet, data = alphadiv_adj)
+summary(anova_adj)
+################
+################without accounting for library size
+# family level
+mod_fam <- lm(Observed ~ diet, data = alphadivfam)
+shapiro.test(residuals(mod_fam))#normally distributed
+
+# order level
+mod_ord <- lm(Observed ~ diet, data = alphadivord)
+shapiro.test(residuals(mod_ord))#normally distributed
+
+# phylum level
+mod_phy <- lm(Observed ~ diet, data = alphadivphy)
+shapiro.test(residuals(mod_phy))#not normally
+#######################################################################################
+dunnTest(Observed ~ diet, data = alphadivgen, method = "bh")
+##################################
+anova_result <- aov(Observed ~ diet, data = alphadivfam)
+summary(anova_result)#s
+TukeyHSD(anova_result)
+# Extract TukeyHSD results and reformat
+tukey_results <- TukeyHSD(anova_result)$Diet
+significance <- as.data.frame(tukey_results) %>%
+  rownames_to_column(var = "comparison") %>%
+  separate(comparison, into = c("group1", "group2"), sep = "-")
+##################################################
+anova_result <- aov(Observed ~ diet, data = alphadivord)
+summary(anova_result)#ns
+TukeyHSD(anova_result)
+# Extract TukeyHSD results and reformat
+tukey_results <- TukeyHSD(anova_result)$Diet
+significance <- as.data.frame(tukey_results) %>%
+  rownames_to_column(var = "comparison") %>%
+  separate(comparison, into = c("group1", "group2"), sep = "-")
+kruskal.test(Observed ~ diet, data = alphadivphy)#ns
+###########################################################
+######################
+p <- ggplot(alphadivgen, aes(x = diet, y = Observed, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) + # Boxplot without outliers
+  geom_jitter(width = 0.2, alpha = 0.6) + # Add individual points
+  geom_signif(
+    comparisons = list(
+      c("sc", "fig"),
+      c("sc", "kombucha"),
+      c("tea", "sc"),
+      c("wk", "sc")
+    ),
+    annotations = c("***", "***", "***", "**"), # Add significance stars manually
+    y_position = c(210, 220, 230, 260), # Adjust positions of significance bars
+    tip_length = 0.02 # Length of the tips of significance bars
+  ) +
+  labs(
+    title = "Observed Richness(genus) by Diet with Significance",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), # Tilt x-axis labels
+    legend.position = "none"
+  )
+#####################################
+q <- ggplot(alphadivfam, aes(x = diet, y = Observed, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) + # Boxplot without outliers
+  geom_jitter(width = 0.2, alpha = 0.6) + # Add individual points
+  geom_signif(
+    comparisons = list(
+      c("sc", "fig"),
+      c("sc", "kombucha"),
+      c("tea", "sc"),
+      c("wk", "sc")
+    ),
+    annotations = c("***", "***", "***", "**"), # Add significance stars manually
+    y_position = c(100, 105, 110, 115), # Adjust positions of significance bars
+    tip_length = 0.02 # Length of the tips of significance bars
+  ) +
+  labs(
+    title = "Observed Richness(family) by Diet with Significance",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), # Tilt x-axis labels
+    legend.position = "none"
+  )
+####################################
+r<- ggplot(alphadivord, aes(x = diet, y = Observed, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  geom_signif(
+    comparisons = list(
+      c("sc", "fig"),
+      c("sc", "kombucha"),
+      c("tea", "sc")
+    ),
+    annotations = c("***", "*", "*"),
+    y_position = c(60, 70, 80),
+    tip_length = 0.02
+  ) +
+  labs(
+    title = "Observed Richness(order) by Diet with TukeyHSD Significance",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+#####################################
+s <- ggplot(alphadivphy, aes(x = diet, y = Observed, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) + # Boxplot without outliers
+  geom_jitter(width = 0.2, alpha = 0.6)  +
+  labs(
+    title = "Observed Richness(phylum) by Diet-Phylum",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), # Tilt x-axis labels
+    legend.position = "none"
+  )
+#########################
+t <- p + q+ r+s
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/obs_richness_figtea.svg", plot = t, width = 12, height = 8, units = "in")
+################################################################
+#with accounting for library size
+p <- ggplot(alphadivgen, aes(x = diet, y = Observed, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) + # Boxplot without outliers
+  geom_jitter(width = 0.2, alpha = 0.6) + 
+  labs(
+    title = "Observed Richness(genus) by Diet with Significance",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), # Tilt x-axis labels
+    legend.position = "none"
+  )
+#####################################
+q <- ggplot(alphadivfam, aes(x = diet, y = Observed, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) + # Boxplot without outliers
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(
+    title = "Observed Richness(family) by Diet ",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), # Tilt x-axis labels
+    legend.position = "none"
+  )
+####################################
+r<- ggplot(alphadivord, aes(x = diet, y = Observed, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(
+    title = "Observed Richness(order) by Diet ",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+#####################################
+s <- ggplot(alphadivphy, aes(x = diet, y = Observed, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) + # Boxplot without outliers
+  geom_jitter(width = 0.2, alpha = 0.6)  +
+  labs(
+    title = "Observed Richness(phylum) by Diet-Phylum",
+    x = "Diet",
+    y = "Observed Richness"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), # Tilt x-axis labels
+    legend.position = "none"
+  )
+#########################
+t1 <- p + q+ r+s
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/obs_richness_libsizefigtea.svg", plot = t1, width = 12, height = 8, units = "in")
+################################################################
+#calculating shannon
+alphadivgen <- estimate_richness(ps.gen, measures = "Shannon") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.gen)), by = "Sample_ID") 
+alphadivgen$LibrarySize <- sample_sums(ps.gen)
+alphadivfam <- estimate_richness(ps.family, measures = "Shannon") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.family)), by = "Sample_ID") 
+alphadivfam$LibrarySize <- sample_sums(ps.family)
+alphadivord <- estimate_richness(ps.ord, measures = "Shannon") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.ord)), by = "Sample_ID") 
+alphadivord$LibrarySize <- sample_sums(ps.ord)
+alphadivphy <- estimate_richness(ps.phylum, measures = "Shannon") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.phylum)), by = "Sample_ID") 
+#######################################################################################
+# genus level
+anova_result <- aov(Shannon ~ diet + LibrarySize + diet:LibrarySize, data = alphadivgen)
+summary(anova_result)
+res <- residuals(anova_result)
+shapiro.test(res)
+#########revised after correction
+anova_result <- aov(Shannon ~ diet + LibrarySize + diet:LibrarySize, data = alphadivfam)
+summary(anova_result)
+res <- residuals(anova_result)
+shapiro.test(res)
+TukeyHSD(anova_result, which = "diet")
+anova_result <- aov(Shannon ~ diet + LibrarySize + diet:LibrarySize, data = alphadivord)
+summary(anova_result)
+res <- residuals(anova_result)
+shapiro.test(res)
+
+#######################################################################################
+dunnTest(Observed ~ diet, data = alphadivgen, method = "bh")
+##################################
+J <- evenness(ps.gen, index = "pielou")
+H <- evenness(ps.ord, index = "pielou")
+I <- evenness(ps.family, index = "pielou")
+M <- evenness(ps.phylum, index = "pielou")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+################################################################
+################################################################
+################################################################
+################################################################
+#remotes::install_github("microbiome/microbiome")
+#library(microbiome)
+library(microbiomeutilities)
+dom <- dominance(ps, rank = 6, relative = TRUE, aggregate = TRUE)
+dom2 <- dominance(ps, rank = 5, relative = TRUE, aggregate = TRUE)
+#metadata <- metadata[-28,]#only temporary rerunning to find the sample in cluster
+#################################
+metadata <- sample_data(ps)
+gen <- cbind(dom, metadata)
+shapiro.test(gen$dbp)
+leveneTest(dbp ~ diet, data = gen)
+######################################
+anova_result <- aov(dbp ~ diet, data = gen)
+summary(anova_result)#ns
+############################
+p <- ggplot(gen, aes(x = diet, y = dbp, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) +  # Boxplot without showing outliers
+  geom_jitter(width = 0.2, alpha = 0.6) +  # Jitter for individual points
+  labs(
+    title = "Dominance across diet Genera",
+    x = "Diet",
+    y = "dbp"
+  ) +
+  theme_classic() +  # Clean white background
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Tilt x-axis labels
+    legend.position = "none"
+  )
+#################################
+fam <- cbind(dom2, metadata)
+shapiro.test(fam$dbp)
+leveneTest(dbp ~ diet, data = fam)
+anova_result <- aov(dbp ~ diet, data = fam)
+summary(anova_result)#ns
+q <- ggplot(fam, aes(x = diet, y = dbp, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) +  # Boxplot without showing outliers
+  geom_jitter(width = 0.2, alpha = 0.6) +  # Jitter for individual points
+  labs(
+    title = "Dominance across diet-Family",
+    x = "Diet",
+    y = "dbp"
+  ) +
+  theme_classic() +  # Clean white background
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Tilt x-axis labels
+    legend.position = "none"
+  )
+r <- p + q
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/dominance_figtea.svg", plot = r, width = 12, height = 6, units = "in")
+#################################
+#tells you who is dominant
+x.d <- dominant_taxa(ps.gen,level = "Genus", group="diet")
+head(x.d$dominant_overview)
+all_g <- x.d$all_data
+stat_g <- x.d$dominant_overview
+stat_g %>%
+  group_by(diet) %>%
+  top_n(1, wt = rel.freq)
+x.d <- dominant_taxa(ps.family,level = "Family", group="diet")
+head(x.d$dominant_overview)
+all_f <- x.d$all_data
+stat_f <- x.d$dominant_overview
+stat_f %>%
+  group_by(diet) %>%
+  top_n(1, wt = rel.freq)
+##########################################
+#faith phylogenetic distance
+#install.packages("picante")#need for faith pd distance
+library(picante)
+otu <- as(otu_table(ps.gen), "matrix")
+if (taxa_are_rows(ps.gen)) {
+  otu <- t(otu)
+}
+comm.pd <- pd(otu,phy_tree(ps.gen))
+head(comm.pd)
+metadata <- sample_data(ps.gen)
+genera <- cbind(comm.pd, metadata)
+
+shapiro.test(genera$PD)
+leveneTest(PD ~ diet, data = genera)
+kruskal.test(PD ~ diet, data = genera)
+dunnTest(PD ~ diet, data = genera, method = "bh")
+##############
+library(rstatix)
+library(ggpubr)
+library(ggplot2)
+
+stat.test <- genera %>%
+  pairwise_wilcox_test(PD ~ diet, p.adjust.method = "BH") %>%
+  add_y_position(step.increase = 0.2) %>%
+  filter(p.adj.signif != "ns")   # drop non-significant results
+
+# Plot
+p <- ggplot(genera, aes(x = diet, y = PD, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(
+    title = "Faith's Phylogenetic Diversity by Diet",
+    x = "Diet",
+    y = "Faith's PD"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  ) +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", tip.length = 0.01)
+
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/pd_figtea.svg", plot = r, width = 12, height = 6, units = "in")
+############
+otu <- as(otu_table(ps.family), "matrix")
+if (taxa_are_rows(ps.family)) {
+  otu <- t(otu)
+}
+comm.pd <- pd(otu,phy_tree(ps.family))
+head(comm.pd)
+metadata <- sample_data(ps.family)
+fam <- cbind(comm.pd, metadata)
+shapiro.test(fam$PD)
+leveneTest(PD ~ diet, data = fam)
+kruskal.test(PD ~ diet, data = fam)
+dunnTest(PD ~ diet, data = fam, method = "bh")
+##############
+
+stat.test <- fam %>%
+  pairwise_wilcox_test(PD ~ diet, p.adjust.method = "BH") %>%
+  add_y_position(step.increase = 0.2) %>%
+  filter(p.adj.signif != "ns")   # drop non-significant results
+
+# Plot
+q <- ggplot(fam, aes(x = diet, y = PD, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(
+    title = "Faith's Phylogenetic Diversity by Diet",
+    x = "Diet",
+    y = "Faith's PD"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  ) +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", tip.length = 0.01)
+
+q
+r <- p + q
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/FPD_figtea.svg", plot = r, width = 12, height = 6, units = "in")
+################################################
+##trying my best to account for sequencing depth differences and batch effects
+sample_sums(ps.gen) #seq depth
+# Calculate library size (sum of counts per sample)
+libsize <- sample_sums(ps.gen)
+
+# Add as a new column in sample_data
+sample_data(ps.gen)$LibrarySize <- libsize
+ps.rarefied <- rarefy_even_depth(ps.gen, 
+                                 sample.size = 140000, 
+                                 rngseed = 123, 
+                                 verbose = TRUE)
+sample_sums(ps.rarefied)
+
+######################
+alphadivgen <- estimate_richness(ps.rarefied, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.rarefied)), by = "Sample_ID")
+#does not violate rules of anova
+anova_result <- aov(Observed ~ diet , data = alphadivgen)
+summary(anova_result)
+anova_result <- aov(Observed ~ diet, data = alphadivgen)
+TukeyHSD(anova_result)
+###########################
+sample_sums(ps.family) #seq depth
+# Calculate library size (sum of counts per sample)
+libsize <- sample_sums(ps.family)
+min(libsize)
+# Add as a new column in sample_data
+sample_data(ps.family)$LibrarySize <- libsize
+ps.rarefied <- rarefy_even_depth(ps.family, 
+                                 sample.size = 39832, 
+                                 rngseed = 123, 
+                                 verbose = TRUE)
+sample_sums(ps.rarefied)
+
+######################
+alphadivfam <- estimate_richness(ps.rarefied, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.rarefied)), by = "Sample_ID")
+alphadivfam$LibrarySize <- sample_sums(ps.rarefied)
+# Using aov
+anova_result <- aov(Observed ~ diet, data = alphadivfam)
+shapiro.test(residuals(anova_result))
+
+#does not violate rules of anova
+anova_result <- aov(Observed ~ diet , data = alphadivfam)
+summary(anova_result)
+###############
+###########################
+sample_sums(ps.ord) #seq depth
+# Calculate library size (sum of counts per sample)
+libsize <- sample_sums(ps.ord)
+min(libsize)
+# Add as a new column in sample_data
+sample_data(ps.ord)$LibrarySize <- libsize
+ps.rarefied <- rarefy_even_depth(ps.ord, 
+                                 sample.size = 39848, 
+                                 rngseed = 123, 
+                                 verbose = TRUE)
+sample_sums(ps.rarefied)
+
+######################
+alphadivord <- estimate_richness(ps.rarefied, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.rarefied)), by = "Sample_ID")
+alphadivord$LibrarySize <- sample_sums(ps.rarefied)
+# Using aov
+anova_result <- aov(Observed ~ diet, data = alphadivord)
+shapiro.test(residuals(anova_result))
+
+#does not violate rules of anova
+anova_result <- aov(Observed ~ diet , data = alphadivord)
+summary(anova_result)
+##############################
+######################################
+libsize <- sample_sums(ps.phylum)
+min(libsize)
+# Add as a new column in sample_data
+sample_data(ps.phylum)$LibrarySize <- libsize
+ps.rarefied <- rarefy_even_depth(ps.phylum, 
+                                 sample.size = 39848, 
+                                 rngseed = 123, 
+                                 verbose = TRUE)
+sample_sums(ps.rarefied)
+alphadivphy <- estimate_richness(ps.rarefied, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.rarefied)), by = "Sample_ID")
+alphadivphy$LibrarySize <- sample_sums(ps.rarefied)
+# Using aov
+anova_result <- aov(Observed ~ diet, data = alphadivphy)
+shapiro.test(residuals(anova_result))
+
+#does not violate rules of anova
+anova_result <- aov(Observed ~ diet , data = alphadivphy)
+summary(anova_result)
+######################################
+#######################################
+#doing same for shannon
+##trying my best to account for sequencing depth differences and batch effects
+sample_sums(ps.gen) #seq depth
+# Calculate library size (sum of counts per sample)
+libsize <- sample_sums(ps.gen)
+
+# Add as a new column in sample_data
+sample_data(ps.gen)$LibrarySize <- libsize
+ps.rarefied <- rarefy_even_depth(ps.gen, 
+                                 sample.size = 140000, 
+                                 rngseed = 123, 
+                                 verbose = TRUE)
+sample_sums(ps.rarefied)
+
+######################
+alphadivgen <- estimate_richness(ps.rarefied, measures = "Shannon") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.rarefied)), by = "Sample_ID")
+#does not violate rules of anova
+anova_result <- aov(Shannon ~ diet , data = alphadivgen)
+shapiro.test(residuals(anova_result))
+summary(anova_result)
+kruskal.test(Shannon ~ diet, data = alphadivgen)
+###########################
+sample_sums(ps.family) #seq depth
+# Calculate library size (sum of counts per sample)
+libsize <- sample_sums(ps.family)
+min(libsize)
+# Add as a new column in sample_data
+sample_data(ps.family)$LibrarySize <- libsize
+ps.rarefied <- rarefy_even_depth(ps.family, 
+                                 sample.size = 39832, 
+                                 rngseed = 123, 
+                                 verbose = TRUE)
+sample_sums(ps.rarefied)
+
+######################
+alphadivfam <- estimate_richness(ps.rarefied, measures = "Shannon") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.rarefied)), by = "Sample_ID")
+alphadivfam$LibrarySize <- sample_sums(ps.rarefied)
+anova_result <- aov(Shannon ~ diet, data = alphadivfam)
+shapiro.test(residuals(anova_result))
+summary(anova_result)
+emm <- emmeans(anova_result, ~ diet)
+pairs(emm, adjust = "BH")
+###############
+###########################
+sample_sums(ps.ord) #seq depth
+# Calculate library size (sum of counts per sample)
+libsize <- sample_sums(ps.ord)
+min(libsize)
+# Add as a new column in sample_data
+sample_data(ps.ord)$LibrarySize <- libsize
+ps.rarefied <- rarefy_even_depth(ps.ord, 
+                                 sample.size = 39848, 
+                                 rngseed = 123, 
+                                 verbose = TRUE)
+sample_sums(ps.rarefied)
+
+######################
+alphadivord <- estimate_richness(ps.rarefied, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.rarefied)), by = "Sample_ID")
+alphadivord$LibrarySize <- sample_sums(ps.rarefied)
+# Using aov
+anova_result <- aov(Observed ~ diet, data = alphadivord)
+shapiro.test(residuals(anova_result))
+summary(anova_result)
+##############################
+######################################
+libsize <- sample_sums(ps.phylum)
+min(libsize)
+# Add as a new column in sample_data
+sample_data(ps.phylum)$LibrarySize <- libsize
+ps.rarefied <- rarefy_even_depth(ps.phylum, 
+                                 sample.size = 39848, 
+                                 rngseed = 123, 
+                                 verbose = TRUE)
+sample_sums(ps.rarefied)
+alphadivphy <- estimate_richness(ps.rarefied, measures = "Observed") %>%
+  rownames_to_column(var = "Sample_ID") %>%
+  left_join(as.data.frame(sample_data(ps.rarefied)), by = "Sample_ID")
+alphadivphy$LibrarySize <- sample_sums(ps.rarefied)
+# Using aov
+anova_result <- aov(Observed ~ diet, data = alphadivphy)
+shapiro.test(residuals(anova_result))
+
+#does not violate rules of anova
+anova_result <- aov(Observed ~ diet , data = alphadivphy)
+summary(anova_result)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#################################
+##trying my best to account for sequencing depth differences and batch effects
+sample_sums(ps.gen) #seq depth
+# Calculate library size (sum of counts per sample)
+libsize <- sample_sums(ps.gen)
+
+# Add as a new column in sample_data
+sample_data(ps.gen)$LibrarySize <- libsize
+ps.rarefied <- rarefy_even_depth(ps.gen, 
+                                 sample.size = 140000, 
+                                 rngseed = 123, 
+                                 verbose = TRUE)
+otu <- as(otu_table(ps.rarefied), "matrix")
+if (taxa_are_rows(ps.rarefied)) {
+  otu <- t(otu)
+}
+comm.pd <- pd(otu,phy_tree(ps.rarefied))
+head(comm.pd)
+metadata_r <- sample_data(ps.rarefied)
+
+
+genera <- cbind(comm.pd, metadata_r)
+
+mod_pd <- lm(PD ~ diet + plate , data = genera)
+#####################
+shapiro.test(residuals(mod_pd))
+#normally distributed
+# ANOVA
+anova_res <- anova(mod_pd)
+anova_res#still sig
+################################
+mod_aov <- aov(PD ~ diet + plate, data = genera)
+tk <- TukeyHSD(mod_aov, which = "diet")
+
+tk_df <- as.data.frame(tk$diet)
+tk_df$comparison <- rownames(tk_df)
+# Keep only significant results (p adj < 0.05)
+tk_sig <- subset(tk_df, `p adj` < 0.05)
+tk_sig
+tk_sig2 <- tk_sig %>%
+  separate(comparison, into = c("group1", "group2"), sep = "-") %>%
+  mutate(p.adj.signif = case_when(
+    `p adj` <= 0.001 ~ "***",
+    `p adj` <= 0.01  ~ "**",
+    `p adj` <= 0.05  ~ "*"
+  ))
+
+p <- ggplot(genera, aes(x = diet, y = PD, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(
+    title = "Faith's Phylogenetic Diversity by Diet -Genera level comparisons",
+    x = "Diet",
+    y = "Faith's PD"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  ) +
+  stat_pvalue_manual(
+    tk_sig2,
+    label = "p.adj.signif",   # show stars
+    y.position = seq(
+      max(genera$PD, na.rm = TRUE) * 1.05,
+      length.out = nrow(tk_sig2),
+      by = 0.3
+    ),
+    hide.ns = TRUE
+  )
+
+p
+###############################
+sample_sums(ps.family) #seq depth
+# Calculate library size (sum of counts per sample)
+libsize <- sample_sums(ps.family)
+min(libsize)
+# Add as a new column in sample_data
+sample_data(ps.family)$LibrarySize <- libsize
+ps.rarefied <- rarefy_even_depth(ps.family, 
+                                 sample.size = 39823, 
+                                 rngseed = 123, 
+                                 verbose = TRUE)
+otu <- as(otu_table(ps.rarefied), "matrix")
+if (taxa_are_rows(ps.rarefied)) {
+  otu <- t(otu)
+}
+comm.pd <- pd(otu,phy_tree(ps.rarefied))
+head(comm.pd)
+metadata_r <- sample_data(ps.rarefied)
+family <- cbind(comm.pd, metadata_r)
+
+mod_pd <- lm(PD ~ diet + plate , data = family)
+#####################
+shapiro.test(residuals(mod_pd))
+#normally distributed
+# ANOVA
+anova_res <- anova(mod_pd)
+anova_res#not significant
+###############################
+q <- ggplot(family, aes(x = diet, y = PD, fill = diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(
+    title = "Faith's Phylogenetic Diversity by Diet-Family level comparisons",
+    x = "Diet",
+    y = "Faith's PD"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+
+q
+##########
+
+s <- p + q
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/FPD_figtea_afterare.svg", plot = s, width = 16, height = 6, units = "in")
+
+
+################################
+################################################
+#a more controlled method to do pca plot
+##########################
+tax <- as.data.frame(tax_table(ps.gen))
+tax <- tax[,-7]
+################################
+
+otu <- as.data.frame(otu_table(ps.gen))
+
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+
+# Merge PCA scores with metadata
+metadata$SampleID <- rownames(metadata)
+metadata <- as.data.frame(metadata)
+pca_merged <- cbind(pca_df, metadata)
+pca_merged <- pca_merged[,-39]
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+p <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of CLR-transformed data (Genera)",
+    x = pc1_label,
+    y = pc2_label
+  )
+# PERMANOVA Analysis
+# Filter metadata to only include samples in the OTU table
+otu_samples <- rownames(clr)  # Sample IDs in OTU table
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+
+# Calculate Bray-Curtis distance matrix
+dist_matrix <- vegdist(clr, method = "euclidean")
+
+# PERMANOVA
+adonis2(dist_matrix ~ diet , data = metadata_filtered)
+adonis2(dist_matrix ~ cage, data = metadata_filtered)
+
+##############################################################
+##############################################################
+tax <- as.data.frame(tax_table(ps.family))
+tax <- tax[,-c(6,7)]
+################################
+#doing the same for family
+otu <- as.data.frame(otu_table(ps.family))
+
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+
+metadata$SampleID <- rownames(metadata)
+metadata <- as.data.frame(metadata)
+pca_merged <- cbind(pca_df, metadata)
+pca_merged <- pca_merged[,-39]
+
+
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+q <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of CLR-transformed OTU Data (Family)",
+    x = pc1_label,
+    y = pc2_label
+  )
+# PERMANOVA Analysis
+# Filter metadata to only include samples in the OTU table
+otu_samples <- rownames(clr)  # Sample IDs in OTU table
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+# Calculate Bray-Curtis distance matrix
+dist_matrix <- vegdist(clr, method = "euclidean")
+
+# PERMANOVA
+adonis2(dist_matrix ~ diet, data = metadata_filtered)
+adonis2(dist_matrix ~ cage, data = metadata_filtered)
+#adonis2(dist_matrix ~ Category, data = metadata_filtered)
+###########################################################
+################################
+#doing the same for order
+otu <- as.data.frame(otu_table(ps.ord))
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+metadata$SampleID <- rownames(metadata)
+metadata <- as.data.frame(metadata)
+pca_merged <- cbind(pca_df, metadata)
+pca_merged <- pca_merged[,-39]
+
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+r <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of CLR-transformed OTU Data (Order)",
+    x = pc1_label,
+    y = pc2_label
+  )
+# PERMANOVA Analysis
+# Filter metadata to only include samples in the OTU table
+otu_samples <- rownames(clr)  # Sample IDs in OTU table
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+# Calculate Bray-Curtis distance matrix
+dist_matrix <- vegdist(clr, method = "euclidean")
+
+# PERMANOVA
+adonis2(dist_matrix ~ Diet, data = metadata_filtered)
+adonis2(dist_matrix ~ Cage, data = metadata_filtered)
+#adonis2(dist_matrix ~ Category, data = metadata_filtered)
+#############################################################
+tax <- as.data.frame(tax_table(ps.phylum))
+
+################################
+#doing the same for family
+otu <- as.data.frame(otu_table(ps.phylum))
+
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+metadata$SampleID <- rownames(metadata)
+metadata <- as.data.frame(metadata)
+pca_merged <- cbind(pca_df, metadata)
+pca_merged <- pca_merged[,-39]
+
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+s <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of CLR-transformed OTU Data (Phylum)",
+    x = pc1_label,
+    y = pc2_label
+  )
+# PERMANOVA Analysis
+# Filter metadata to only include samples in the OTU table
+otu_samples <- rownames(clr)  # Sample IDs in OTU table
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+metadata_filtered <- as.data.frame(metadata_filtered)
+meta_df$SampleID <- rownames(meta_df)
+keep <- attr(dist_matrix, "Labels")   # same as rownames(clr)
+meta_df <- meta_df[match(keep, meta_df$SampleID), , drop = FALSE]
+rownames(meta_df) <- meta_df$SampleID
+
+# Calculate Bray-Curtis distance matrix
+dist_matrix <-vegdist(clr, method = "euclidean")
+
+# PERMANOVA
+adonis2(dist_matrix ~ diet, data = meta_df)
+adonis2(dist_matrix ~ cage, data = meta_df)
+adonis2(dist_matrix ~ plate, data = meta_df)
+adonis2(dist_matrix ~ plate+diet, data =meta_df, by = "margin")#plate a confounder
+#adonis2(dist_matrix ~ Category, data = metadata_filtered)
+##################
+t <- p +q 
+u <- r + s
+v <- t/u
+
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/pca_taxa_figtea.svg", plot = v, width = 12, height = 6, units = "in")
+####################################
+
+# Step 1: Extract genus-level counts (samples x genera)
+counts <- as(otu_table(ps.gen), "matrix")
+if (taxa_are_rows(ps.gen)) counts <- t(counts)
+
+# Step 2: Assign Genus names as column names
+genus <- as.character(tax_table(ps.gen)[, "Genus"])
+genus[is.na(genus)] <- taxa_names(ps.gen)[is.na(genus)]
+colnames(counts) <- genus
+counts <- counts[metadata$Sample_ID, ]
+#Fork off form the untransformed counts table
+bargenus <- counts
+bargenus <- data.frame(t(bargenus))
+#Make into relative abundance
+bargenus <- apply(bargenus, 2, function(i) i/sum(i))
+#Define a cutoff for rare taxa in several steps:
+#first, determine the max % abundance every feature ever shows up at
+maxabundances <- apply(bargenus, 1, max)
+#Meanwhile, transpose the count table for future wrangling.
+bargenus <- data.frame(t(bargenus))
+#For every sample, sum up all rare taxa ( < 1% at their highest in this case)
+bargenus$`Rare Taxa` <- rowSums(bargenus[,maxabundances < 0.01], na.rm = TRUE)
+#Remove the individual rare taxa now that they're summed up
+bargenus = bargenus[,c(maxabundances > 0.01, T) ] #`T` to include the `Rare Taxa`.
+#Prepare the data for ggplot by adding in metadata here
+bargenus$diet = metadata$diet
+bargenus$ID = metadata$Sample_ID
+#Wrangle the data to long format for easy plotting
+barlong = bargenus %>%
+  pivot_longer(!c(ID, diet), names_to = c("Microbe"), values_to = "value") %>%
+  mutate(Microbe = str_replace(Microbe, ".*_or_", ""))
+cols = metafolio::gg_color_hue(length(unique(barlong$Microbe)))
+cols[unique(barlong$Microbe)=="Rare Taxa"]="dark gray"
+##########
+p <- barlong %>%
+  ggplot(aes(x = ID, y = value, fill = Microbe)) +
+  geom_bar(stat = "identity", col = "black", linewidth = .2, width = 1) +
+  facet_row(~diet, scales = "free_x") +
+  #Adjust layout and appearance
+  scale_fill_manual(values = cols, labels = unique(sub(".*ales_", "", barlong$Microbe))) +
+  scale_y_continuous(expand = c(0, 0)) +
+  guides(fill = guide_legend(ncol = 1, keyheight = 1, title = "Legend")) +
+  theme_bw() + xlab("") + ylab("Proportion") +
+  theme(text = element_text(size = 14), axis.text.x = element_blank())
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/Figures/stcked_barplot_figtea.svg", plot = p, width = 40, height = 20, units = "in")
+#################################
+#################################
+counts <- as(otu_table(ps.phylum), "matrix")
+if (taxa_are_rows(ps.phylum)) counts <- t(counts)
+
+# Step 2: Assign Genus names as column names
+phylum <- as.character(tax_table(ps.phylum)[, "Phylum"])
+phylum[is.na(phylum)] <- taxa_names(ps.phylum)[is.na(phylum)]
+colnames(counts) <- phylum
+counts <- counts[metadata$Sample_ID, ]
+#Fork off form the untransformed counts table
+bargenus <- counts
+bargenus <- data.frame(t(bargenus))
+#Make into relative abundance
+bargenus <- apply(bargenus, 2, function(i) i/sum(i))
+#Define a cutoff for rare taxa in several steps:
+#first, determine the max % abundance every feature ever shows up at
+maxabundances <- apply(bargenus, 1, max)
+#Meanwhile, transpose the count table for future wrangling.
+bargenus <- data.frame(t(bargenus))
+#For every sample, sum up all rare taxa ( < 1% at their highest in this case)
+bargenus$`Rare Taxa` <- rowSums(bargenus[,maxabundances < 0.01], na.rm = TRUE)
+#Remove the individual rare taxa now that they're summed up
+bargenus = bargenus[,c(maxabundances > 0.01, T) ] #`T` to include the `Rare Taxa`.
+#Prepare the data for ggplot by adding in metadata here
+bargenus$diet = metadata$diet
+bargenus$ID = metadata$Sample_ID
+#Wrangle the data to long format for easy plotting
+barlong = bargenus %>%
+  pivot_longer(!c(ID, diet), names_to = c("Microbe"), values_to = "value") %>%
+  mutate(Microbe = str_replace(Microbe, ".*_or_", ""))
+cols = metafolio::gg_color_hue(length(unique(barlong$Microbe)))
+cols[unique(barlong$Microbe)=="Rare Taxa"]="dark gray"
+##########
+p <- barlong %>%
+  ggplot(aes(x = ID, y = value, fill = Microbe)) +
+  geom_bar(stat = "identity", col = "black", linewidth = .2, width = 1) +
+  facet_row(~diet, scales = "free_x") +
+  #Adjust layout and appearance
+  scale_fill_manual(values = cols, labels = unique(sub(".*ales_", "", barlong$Microbe))) +
+  scale_y_continuous(expand = c(0, 0)) +
+  guides(fill = guide_legend(ncol = 1, keyheight = 1, title = "Legend")) +
+  theme_bw() + xlab("") + ylab("Proportion") +
+  theme(text = element_text(size = 14), axis.text.x = element_blank())
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/Figures/stcked_barplot_figtea_phyla.svg", plot = p, width = 40, height = 10, units = "in")
+######################################
+#need to add genus names to the as#####
+######################################
+#############da testing###############
+######################################
+#https://www.nicholas-ollberding.com/post/introduction-to-the-statistical-analysis-of-microbiome-data-in-r/
+#remotes::install_github("yiluheihei/microbiomeMarker")
+library(microbiomeMarker)
+ps_filtered <- subset_samples(ps.gen, diet %in% c("wk", "fig"))
+sample_data(ps_filtered)$diet <- factor(sample_data(ps_filtered)$diet, levels = c("wk", "fig"))
+
+conds <- as.character(sample_data(ps_filtered)$diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+
+########
+# Extract and prep taxonomy
+tax <- as.data.frame(tax_table(ps_filtered)) %>%
+  mutate(OTU = rownames(.)) %>%
+  select(OTU, Genus)
+
+# Prep results
+df <- as.data.frame(aldex2_da) %>%
+  mutate(OTU = rownames(.)) %>%
+  left_join(tax, by = "OTU") %>%
+  mutate(
+    Genus = ifelse(is.na(Genus) | Genus == "", OTU, Genus),
+    neglog_p = -log10(wi.ep),
+    significant = wi.eBH < 0.05,
+    enriched_in = case_when(
+      significant & diff.btw > 0 ~ "wk",
+      significant & diff.btw < 0 ~ "fig",
+      TRUE ~ "NS"
+    )
+  )
+p <- ggplot(df, aes(x = diff.btw, y = neglog_p, label = Genus)) +
+  geom_point(aes(color = enriched_in), size = 2, alpha = 0.8) +
+  geom_text_repel(
+    data = filter(df, enriched_in %in% c("wk", "fig")),
+    max.overlaps = 15,
+    size = 3
+  ) +
+  scale_color_manual(
+    values = c("wk" = "red", "fig" = "blue", "NS" = "gray"),
+    name = "Enriched In"
+  ) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Taxa Enriched in wk vs fig (ALDEx2)",
+    x = "Median Difference (wk - fig)",
+    y = "-log10(p-value)"
+  )
+p <- p + coord_cartesian(clip = "off")
+write.csv(df, "C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/fig_Wk.csv")
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/DA_wk_fig.svg", plot = p, width = 6, height = 8, units = "in")
+#################################################################################
+ps_filtered <- subset_samples(ps.gen, diet %in% c("kombucha", "tea"))
+sample_data(ps_filtered)$diet <- factor(sample_data(ps_filtered)$diet, levels = c("kombucha", "tea"))
+
+conds <- as.character(sample_data(ps_filtered)$diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+
+#######################################################################################################################################
+#######################################################################################################################################
+ps_filtered <- subset_samples(ps.gen, diet %in% c("kombucha", "sc"))
+sample_data(ps_filtered)$diet <- factor(sample_data(ps_filtered)$diet, levels = c("kombucha", "sc"))
+
+conds <- as.character(sample_data(ps_filtered)$diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+
+# Extract and prep taxonomy
+tax <- as.data.frame(tax_table(ps_filtered)) %>%
+  mutate(OTU = rownames(.)) %>%
+  select(OTU, Genus)
+
+# Prep results
+df <- as.data.frame(aldex2_da) %>%
+  mutate(OTU = rownames(.)) %>%
+  left_join(tax, by = "OTU") %>%
+  mutate(
+    Genus = ifelse(is.na(Genus) | Genus == "", OTU, Genus),
+    neglog_p = -log10(wi.ep),
+    significant = wi.eBH < 0.05,
+    enriched_in = case_when(
+      significant & diff.btw > 0 ~ "sc",
+      significant & diff.btw < 0 ~ "kombucha",
+      TRUE ~ "NS"
+    )
+  )
+p <- ggplot(df, aes(x = diff.btw, y = neglog_p, label = Genus)) +
+  geom_point(aes(color = enriched_in), size = 2, alpha = 0.8) +
+  geom_text_repel(
+    data = filter(df, enriched_in %in% c("kombucha", "sc")),
+    max.overlaps = 15,
+    size = 3
+  ) +
+  scale_color_manual(
+    values = c("kombucha" = "red", "sc" = "blue", "NS" = "gray"),
+    name = "Enriched In"
+  ) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Taxa Enriched in kombucha vs sc (ALDEx2)",
+    x = "Median Difference (kombucha - sc)",
+    y = "-log10(p-value)"
+  )
+write.csv(df, "C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/kombucha_tea.csv")
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/DA_kombucha_sc.svg", plot = p, width = 6, height = 8, units = "in")
+####################################
+####################################
+ps_filtered <- subset_samples(ps.gen, diet %in% c("wk", "sc"))
+sample_data(ps_filtered)$diet <- factor(sample_data(ps_filtered)$diet, levels = c("wk", "sc"))
+
+conds <- as.character(sample_data(ps_filtered)$diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+
+# Extract and prep taxonomy
+tax <- as.data.frame(tax_table(ps_filtered)) %>%
+  mutate(OTU = rownames(.)) %>%
+  select(OTU, Genus)
+
+# Prep results
+df <- as.data.frame(aldex2_da) %>%
+  mutate(OTU = rownames(.)) %>%
+  left_join(tax, by = "OTU") %>%
+  mutate(
+    Genus = ifelse(is.na(Genus) | Genus == "", OTU, Genus),
+    neglog_p = -log10(wi.ep),
+    significant = wi.eBH < 0.05,
+    enriched_in = case_when(
+      significant & diff.btw > 0 ~ "wk",
+      significant & diff.btw < 0 ~ "sc",
+      TRUE ~ "NS"
+    )
+  )
+p <- ggplot(df, aes(x = diff.btw, y = neglog_p, label = Genus)) +
+  geom_point(aes(color = enriched_in), size = 2, alpha = 0.8) +
+  geom_text_repel(
+    data = filter(df, enriched_in %in% c("wk", "sc")),
+    max.overlaps = 15,
+    size = 3
+  ) +
+  scale_color_manual(
+    values = c("wk" = "red", "sc" = "blue", "NS" = "gray"),
+    name = "Enriched In"
+  ) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Taxa Enriched in wk vs sc (ALDEx2)",
+    x = "Median Difference (wk - sc)",
+    y = "-log10(p-value)"
+  )
+write.csv(df, "C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/scwk.csv")
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/DA_wk_sc.svg", plot = p, width = 6, height = 8, units = "in")
+###############################
+ps_filtered <- subset_samples(ps.gen, diet %in% c("kombucha", "sc"))
+sample_data(ps_filtered)$diet <- factor(sample_data(ps_filtered)$diet, levels = c("kombucha", "sc"))
+
+conds <- as.character(sample_data(ps_filtered)$diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+
+# Extract and prep taxonomy
+tax <- as.data.frame(tax_table(ps_filtered)) %>%
+  mutate(OTU = rownames(.)) %>%
+  select(OTU, Genus)
+
+# Prep results
+df <- as.data.frame(aldex2_da) %>%
+  mutate(OTU = rownames(.)) %>%
+  left_join(tax, by = "OTU") %>%
+  mutate(
+    Genus = ifelse(is.na(Genus) | Genus == "", OTU, Genus),
+    neglog_p = -log10(wi.ep),
+    significant = wi.eBH < 0.05,
+    enriched_in = case_when(
+      significant & diff.btw > 0 ~ "kombucha",
+      significant & diff.btw < 0 ~ "sc",
+      TRUE ~ "NS"
+    )
+  )
+write.csv(df, "C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/sckom.csv")
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/kom_Sc.svg", plot = p, width = 6, height = 8, units = "in")
+###
+
+###########################################
+###########################################
+ps_filtered <- subset_samples(ps.gen, diet %in% c("wk", "kombucha"))
+sample_data(ps_filtered)$diet <- factor(sample_data(ps_filtered)$diet, levels = c("wk", "kombucha"))
+
+conds <- as.character(sample_data(ps_filtered)$diet)
+
+aldex2_da <- ALDEx2::aldex(
+  data.frame(otu_table(ps_filtered)),
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+ALDEx2::aldex.plot(aldex2_da, type="MW", test="wilcox", called.cex = 1, cutoff = 0.05)#DA plot
+############################
+############################
+############################
+#using zymo mock and rep sample to see plate effects
+############DOING THE SAME FOR FIGTEA#######################################################################################################
+setwd("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/16s/final_With_controls")
+# Importing ASVs abundance file
+ASVs <- read_qza("merged_table.qza")
+#setwd("D:/ecoli_run2/rfiles")
+tree <- read_qza("rooted-tree.qza")
+taxonomy <- read_qza("m_taxonomy_assignment.qza")
+metadata <- read.table("metadata_final.tsv" , sep='\t', header=T, row.names=1, comment="")
+# Convert row names into a column named Sample_ID while retaining the row names
+# Duplicate row names into a new column called Sample_ID while retaining row names
+metadata$Sample_ID <- rownames(metadata)
+#metadata <- metadata[-c(25:31),]
+metadata$plate <- ifelse(grepl("^SKC", metadata$Sample_ID), 2, 1)
+levels(metadata$diet)[levels(metadata$diet) == "sc"] <- "standard diet"
+tax_table <- do.call(rbind, strsplit(as.character(taxonomy$data$Taxon), "; "))
+colnames(tax_table) <- c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+rownames(tax_table) <- taxonomy$data$Feature.ID
+physeq <- phyloseq(
+  otu_table(ASVs$data, taxa_are_rows = T),
+  tax_table(tax_table),
+  sample_data(metadata), phy_tree(tree$data))
+
+ps <- physeq
+otu <- as.data.frame(otu_table(ps))
+#########################################
+tax <- as.data.frame(tax_table(ps))
+
+#MAKING THIS CLEAN
+taxa_names(ps)[1:5]
+# find and substitute
+taxa_names(ps) <- gsub(taxa_names(ps), pattern = "d__", replacement = "")  
+
+# Check again Taxonomy table
+phyloseq::tax_table(ps)[1:3,1:3] # check for my table show me [1 to 3 otu ids, 1 to 3 first three ranks]. 
+# find and substitute
+taxa_names(ps) <- gsub(taxa_names(ps), pattern = "denovo", replacement = "OTU-")  
+tax_table(ps)[, colnames(tax_table(ps))] <- gsub(tax_table(ps)[, colnames(tax_table(ps))],     pattern = "[a-z]__", replacement = "")
+colnames(tax_table(ps))
+phyloseq::tax_table(ps)[1:3,1:3] # check for my table show me [1 to 3 otu ids, 1 to 3 first three ranks].
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="=*",replacement="")
+########################################################################################
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="g__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="f__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="o__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="c__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="p__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="d__",replacement="")
+#ps = subset_taxa(ps, Kingdom == "d__Bacteria")
+head(tax_table(ps))
+########################################################################################
+##we are going to plot the following alpha diversity
+#observed
+#dominance
+#faith
+#shannon if observed and dominance is not done
+ps <- prune_taxa(taxa_sums(ps) > 0, ps)
+ps.gen <- phyloseq::tax_glom(ps, "Genus", NArm = TRUE)
+sample_data(ps.gen)
+###############
+# Define the samples to keep
+samples_to_keep <- c("PI_6_S6", "PI_6_S58")
+
+# Prune phyloseq object
+ps.pruned <- prune_samples(samples_to_keep, ps.gen)
+ps.gen <- ps.pruned
+################
+tax <- as.data.frame(tax_table(ps.gen))
+tax <- tax[,-7]
+################################
+
+otu <- as.data.frame(otu_table(ps.gen))
+
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+# Remove columns with all zeros
+totu <- totu[, colSums(totu) != 0]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+
+# Merge PCA scores with metadata
+metadata$SampleID <- rownames(metadata)
+metadata <- metadata %>%
+  filter(SampleID %in% pca_df$SampleID)
+metadata <- as.data.frame(metadata)
+pca_merged <- cbind(pca_df, metadata)
+pca_merged <- pca_merged[,-36]
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+p <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = diet)) +
+  geom_point(size = 4) +  theme_minimal() +
+  labs(
+    title = "PCA of CLR-transformed data (Genera)",
+    x = pc1_label,
+    y = pc2_label
+  )
+###########################
+############################
+###########################
+##########################
+##########################
+###doing da testing after rare
+#########################
+setwd("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/16s/final_With_controls")
+# Importing ASVs abundance file
+ASVs <- read_qza("merged_table.qza")
+#setwd("D:/ecoli_run2/rfiles")
+tree <- read_qza("rooted-tree.qza")
+taxonomy <- read_qza("m_taxonomy_assignment.qza")
+metadata <- read.table("metadata_final.tsv" , sep='\t', header=T, row.names=1, comment="")
+# Convert row names into a column named Sample_ID while retaining the row names
+# Duplicate row names into a new column called Sample_ID while retaining row names
+metadata$Sample_ID <- rownames(metadata)
+#metadata <- metadata[-c(25:31),]
+metadata$plate <- ifelse(grepl("^SKC", metadata$Sample_ID), 2, 1)
+levels(metadata$diet)[levels(metadata$diet) == "sc"] <- "standard diet"
+tax_table <- do.call(rbind, strsplit(as.character(taxonomy$data$Taxon), "; "))
+colnames(tax_table) <- c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+rownames(tax_table) <- taxonomy$data$Feature.ID
+physeq <- phyloseq(
+  otu_table(ASVs$data, taxa_are_rows = T),
+  tax_table(tax_table),
+  sample_data(metadata), phy_tree(tree$data))
+
+ps <- physeq
+otu <- as.data.frame(otu_table(ps))
+#########################################
+tax <- as.data.frame(tax_table(ps))
+
+#MAKING THIS CLEAN
+taxa_names(ps)[1:5]
+# find and substitute
+taxa_names(ps) <- gsub(taxa_names(ps), pattern = "d__", replacement = "")  
+
+# Check again Taxonomy table
+phyloseq::tax_table(ps)[1:3,1:3] # check for my table show me [1 to 3 otu ids, 1 to 3 first three ranks]. 
+# find and substitute
+taxa_names(ps) <- gsub(taxa_names(ps), pattern = "denovo", replacement = "OTU-")  
+tax_table(ps)[, colnames(tax_table(ps))] <- gsub(tax_table(ps)[, colnames(tax_table(ps))],     pattern = "[a-z]__", replacement = "")
+colnames(tax_table(ps))
+phyloseq::tax_table(ps)[1:3,1:3] # check for my table show me [1 to 3 otu ids, 1 to 3 first three ranks].
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="=*",replacement="")
+########################################################################################
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="g__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="f__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="o__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="c__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="p__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="d__",replacement="")
+#ps = subset_taxa(ps, Kingdom == "d__Bacteria")
+head(tax_table(ps))
+########################################################################################
+
+#shannon if observed and dominance is not done
+ps <- prune_taxa(taxa_sums(ps) > 0, ps)
+ps.gen <- phyloseq::tax_glom(ps, "Genus", NArm = TRUE)
+sample_data(ps.gen)
+
+sample_sums(ps.gen) #seq depth
+# Calculate library size (sum of counts per sample)
+libsize <- sample_sums(ps.gen)
+
+# Add as a new column in sample_data
+sample_data(ps.gen)$LibrarySize <- libsize
+ps.rarefied <- rarefy_even_depth(ps.gen, 
+                                 sample.size = 140000, 
+                                 rngseed = 123, 
+                                 verbose = TRUE)
+sample_sums(ps.rarefied)
+#########
+#########
