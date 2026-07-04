@@ -1,0 +1,217 @@
+gbmko <- read.table("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/pointsix/modules.tsv", header = T)
+
+metadata <- read.table("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot kimchi and sauerkraut/16s/output272230/meta.tsv" , sep='\t', header=T, row.names=1, comment="")
+metadata<- metadata[-c(55:58),]#REMOVING BLANKS AND MOCKS
+# Create a new column for cage mate groups
+metadata$CageGroup <- gsub("(\\d+[A-Za-z]+)\\d+", "\\1", metadata$Cage)
+anno <- read.delim("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/16s/final280180/pathways/annotated_pathways.txt", header = T)
+###########################################################################
+ko <- gbmko
+ko <- as.data.frame(ko)
+ko <- column_to_rownames(ko, var = colnames(ko)[1])
+ko <- t(ko)
+ko <- ko[, grepl("^MGB", colnames(ko)) & as.numeric(sub("MGB", "", colnames(ko))) <= 56]
+#Then, remove features that are absent in more than your threshold (90% in this case).
+n_zeroes <- rowSums(ko == 0)
+ko <- ko[n_zeroes <= round(ncol(ko) * 0.90),]
+###########################
+# List of samples to remove
+samples_to_remove <- c("SKC_55_S55", "Zymo_Mock_S56", "Lib_Neg_S57", "PI_6_S58", 
+                       "SKC_13_S13", "SKC_15_S15", "SKC_39_S39", "SKC_40_S40", 
+                       "SKC_41_S41", "SKC_42_S42", "SKC_43_S43", "SKC_45_S45", 
+                       "SKC_47_S47", "SKC_52_S52")
+
+# Filter out specified samples from the dataset
+ko <- ko[!rownames(ko) %in% samples_to_remove, ]
+metadata$fermentation_status <- ifelse(metadata$Diet %in% c("CAB", "TM"), "unfermented", "fermented")
+zero_variance_cols <- apply(ko, 2, var) == 0
+sum(zero_variance_cols)  # Number of constant columns
+ko_clr_filtered <- ko[, !zero_variance_cols]
+##########################################
+##########################################
+clr <- clr_c(ko_clr_filtered)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+
+# Merge PCA scores with metadata
+metadata$SampleID <- rownames(metadata)
+pca_merged <- merge(pca_df, metadata, by = "SampleID")
+
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+r <- ggplot(pca_merged, aes(x = PC1, y = PC2, fill = Diet)) +
+  geom_point(
+    position = position_jitter(width = 0.1, height = 0.1), 
+    size = 4, 
+    shape = 21, 
+    stroke = 1, 
+    color = "black"   # Black outlines for points
+  ) +
+  stat_ellipse(
+    aes(color = Diet, group = Diet), # Ellipse outlines match diet color
+    level = 0.95, 
+    linewidth = 1
+  ) +
+  theme_minimal() +
+  labs(
+    title = "PCA of predicted gbm -fermented",
+    x = pc1_label,
+    y = pc2_label
+  )
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/gbm_kimsau_pcapointsix.svg", plot = r, width = 12, height = 6, units = "in")
+
+
+
+metadata_filtered <- metadata[rownames(metadata) %in% rownames(ko_clr_filtered), ]
+
+# Ensure the row order matches between metadata and ko_clr_filtered
+metadata_filtered <- metadata_filtered[match(rownames(ko_clr_filtered), rownames(metadata_filtered)), ]
+set.seed(123)
+################
+################
+# Perform PERMANOVA
+adonis_result <- adonis2(ko_clr_filtered ~  fermentation_status, data = metadata_filtered, method = "euclidean")
+adonis_result
+adonis_result <- adonis2(ko_clr_filtered ~  Diet, data = metadata_filtered, method = "euclidean")
+adonis_result
+adonis_result <- adonis2(ko_clr_filtered ~  Diet + CageGroup , data = metadata_filtered, method = "euclidean")
+adonis_result
+adonis_result <- adonis2(ko_clr_filtered ~  Diet , data = metadata_filtered, method = "euclidean")
+adonis_result
+#note the problem of cage effect
+#if you do by ="term" then the factors are treated sequencially, diet explains mst of variation
+#but this can be inflated as each animal is treated independently and risk pseudoinflation
+#more animals as a result we need to block by cage, cage nested within diet thats why we aggregate
+############################
+
+###########################
+###########################
+# Collapse the CLR-transformed matrix to the cage level
+agg_mat <- rowsum(ko_clr_filtered, metadata_filtered$CageGroup) /
+  as.vector(table(metadata_filtered$CageGroup))
+
+# Create cage-level metadata
+cage_meta <- unique(metadata_filtered[, c("CageGroup", "fermentation_status")])
+cage_meta <- cage_meta[match(rownames(agg_mat), cage_meta$CageGroup), , drop = FALSE]
+
+# Run PERMANOVA at the cage level
+adonis2(
+  agg_mat ~ fermentation_status,
+  data = cage_meta,
+  method = "euclidean",
+  permutations = 999
+)
+metadata_kc <- metadata[metadata$Diet %in% c("KIM", "CAB"), ]
+
+# Subset KO count table to matching samples
+ko_kc <- ko[rownames(metadata_kc), ]
+
+
+conds <- factor(metadata_kc$diet, levels = c("KIM", "CAB"))
+conds <- as.character(metadata_kc$Diet)
+ko_kc_t <- t(ko_kc)
+ko_kc_int <- round(ko_kc_t)
+aldex_kc <- aldex(
+  ko_kc_int,
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+
+# Plot: MA-style volcano with Wilcoxon
+aldex.plot(aldex_kc, type = "MW", test = "wilcox", called.cex = 1, cutoff = 0.05)
+##############################
+unique(conds)#whatever comes first gets positive value
+# Add enrichment and significance info
+aldex_kc$enriched_in <- ifelse(aldex_kc$we.eBH < 0.05 & aldex_kc$effect > 1, "KIM",
+                               ifelse(aldex_kc$we.eBH < 0.05 & aldex_kc$effect < -1, "CAB", "not_sig"))
+#none are enriched
+####################################################################
+####################################################################
+metadata_sc <- metadata[metadata$Diet %in% c("SAU", "CAB"), ]
+
+# Subset KO count table to matching samples
+ko_sc <- ko[rownames(metadata_sc), ]
+conds <- factor(metadata_sc$Diet, levels = c("SAU", "CAB"))
+conds <- as.character(metadata_sc$Diet)
+ko_sc_t <- t(ko_sc)
+ko_sc_int <- round(ko_sc_t)
+aldex_sc <- aldex(
+  ko_sc_int,
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+
+# Plot: MA-style volcano with Wilcoxon
+aldex.plot(aldex_sc, type = "MW", test = "wilcox", called.cex = 1, cutoff = 0.05)
+##############################
+unique(conds)#whatever comes first gets positive value
+# Add enrichment and significance info
+aldex_sc$enriched_in <- ifelse(aldex_sc$we.eBH < 0.05 & aldex_sc$effect > 1, "CAB",
+                               ifelse(aldex_sc$we.eBH < 0.05 & aldex_sc$effect < -1, "SAU", "not_sig"))
+##########################################################################################
+##########################################################################################
+metadata_stm <- metadata[metadata$Diet %in% c("SAU", "TM"), ]
+
+# Subset KO count table to matching samples
+ko_stm <- ko[rownames(metadata_stm), ]
+
+
+conds <- factor(metadata_stm$Diet, levels = c("SAU", "TM"))
+conds <- as.character(metadata_stm$Diet)
+ko_stm_t <- t(ko_stm)
+ko_stm_int <- round(ko_stm_t)
+aldex_stm <- aldex(
+  ko_stm_int,
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+
+# Plot: MA-style volcano with Wilcoxon
+aldex.plot(aldex_stm, type = "MW", test = "wilcox", called.cex = 1, cutoff = 0.05)
+##############################
+unique(conds)#whatever comes first gets positive value
+# Add enrichment and significance info
+aldex_stm$enriched_in <- ifelse(aldex_stm$we.eBH < 0.05 & aldex_stm$effect > 1, "TM",
+                                ifelse(aldex_stm$we.eBH < 0.05 & aldex_stm$effect < -1, "SAU", "not_sig"))
+
+##########################################################################
+metadata_ktm <- metadata[metadata$Diet %in% c("KIM", "TM"), ]
+# Subset KO count table to matching samples
+ko_ktm <- ko[rownames(metadata_ktm), ]
+conds <- factor(metadata_ktm$Diet, levels = c("KIM", "TM"))
+conds <- as.character(metadata_ktm$Diet)
+ko_ktm_t <- t(ko_ktm)
+ko_ktm_int <- round(ko_ktm_t)
+aldex_ktm <- aldex(
+  ko_ktm_int,
+  conds,
+  test = "t",
+  effect = TRUE,
+  denom = "iqlr"
+)
+# Plot: MA-style volcano with Wilcoxon
+aldex.plot(aldex_ktm, type = "MW", test = "wilcox", called.cex = 1, cutoff = 0.05)
+##############################
+unique(conds)#whatever comes first gets positive value
+# Add enrichment and significance info
+aldex_stm$enriched_in <- ifelse(aldex_stm$we.eBH < 0.05 & aldex_stm$effect > 1, "KIM",
+                                ifelse(aldex_stm$we.eBH < 0.05 & aldex_stm$effect < -1, "TM", "not_sig"))
