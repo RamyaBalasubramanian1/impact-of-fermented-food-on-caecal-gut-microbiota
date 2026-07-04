@@ -1,0 +1,564 @@
+all_scfa <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/SCFA results kimsau.csv")
+meta <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/meta_kimsau.csv")
+sc <- meta %>% filter(grepl("SC", Diet))
+meta <- meta %>% filter(!grepl("SC", Diet))
+meta <- meta[-c(43:48),]
+#################
+sc_data <- all_scfa %>%
+  filter(all_scfa$Sample_ID %in% sc$sample_id)
+all_scfa_filtered <- all_scfa %>%
+  filter(!all_scfa$Sample_ID %in% sc$sample_id)
+all_scfa_filtered <- all_scfa_filtered[-c(43,44),]
+scfa_w_diet <- all_scfa_filtered %>%
+  inner_join(meta %>% dplyr::select(sample_id, Diet),
+             by = c("Sample_ID" = "sample_id"))
+#####################
+#####################
+setwd("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot kimchi and sauerkraut/16s/output272230/picrust")
+ko <- read.table("pred_metagenome_unstrat_kimsau.tsv", header = T)
+ko <- t(ko)
+colnames(ko) <- as.character(ko[1, ])
+ko <- ko[-1, ]
+samples_to_remove <- c("SKC_55_S55", "Zymo_Mock_S56", "Lib_Neg_S57", "PI_6_S58", 
+                       "SKC_13_S13", "SKC_15_S15", "SKC_39_S39", "SKC_40_S40", 
+                       "SKC_41_S41", "SKC_42_S42", "SKC_43_S43", "SKC_45_S45", 
+                       "SKC_47_S47", "SKC_52_S52")
+
+ko <- ko[!rownames(ko) %in% samples_to_remove, ]
+rownames(ko) <- sub("_S[0-9]+$", "", rownames(ko))
+############################
+#mined SCFA ko
+##############################
+scfa_ko <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/SCFA_KO.csv")
+library(tibble)
+colnames(scfa_ko) <- as.character(unlist(scfa_ko[1, ]))
+scfa_ko <- scfa_ko[-1, ]
+##########
+###########
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(purrr)
+
+# 1. Clean KO names of interest
+ko_interest <- scfa_ko %>%
+  mutate(
+    KO = trimws(KO),
+    COMPOUND = trimws(COMPOUND)
+  ) %>%
+  distinct()
+
+# 2. Clean KO abundance table
+ko_clean <- ko %>%
+  as.data.frame() %>%
+  rownames_to_column("ID") %>%
+  mutate(
+    ID = sub("_S[0-9]+$", "", ID)   # SKC_1_S1 -> SKC_1
+  )
+
+# convert KO columns to numeric
+ko_clean[-1] <- lapply(ko_clean[-1], function(x) as.numeric(trimws(x)))
+
+# 3. Keep only KO columns present in your KO-of-interest table
+kos_present <- intersect(ko_interest$KO, colnames(ko_clean))
+
+ko_sub <- ko_clean %>%
+  select(ID, all_of(kos_present))
+
+# check missing KOs
+setdiff(ko_interest$KO, colnames(ko_clean))
+merged <- scfa_w_diet %>%
+  mutate(ID = trimws(ID)) %>%
+  inner_join(ko_sub, by = "ID")
+
+dim(merged)
+head(merged[, c("ID", "Diet", "acetate", "propionate", "butyrate", kos_present[1:3])])
+# make SCFA compound names match column names
+ko_interest2 <- ko_interest %>%
+  mutate(
+    scfa_col = case_when(
+      tolower(COMPOUND) == "acetate" ~ "acetate",
+      tolower(COMPOUND) == "propionate" ~ "propionate",
+      tolower(COMPOUND) == "butyrate" ~ "butyrate",
+      tolower(COMPOUND) == "isobutyrate" ~ "isobutyrate",
+      tolower(COMPOUND) == "isovalerate" ~ "isovalerate",
+      tolower(COMPOUND) == "valerate" ~ "valerate",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(KO %in% kos_present, !is.na(scfa_col))
+
+
+library(tidyverse)
+
+ko_cols <- intersect(unique(ko_interest2$KO), colnames(merged))
+
+cor_data <- merged %>%
+  select(Sample_ID, ID, Diet, all_of(ko_cols),
+         acetate, propionate, butyrate, isobutyrate, isovalerate, valerate, BCFA, SCFA) %>%
+  pivot_longer(
+    cols = all_of(ko_cols),
+    names_to = "KO",
+    values_to = "KO_abundance"
+  ) %>%
+  inner_join(
+    ko_interest2 %>% distinct(COMPOUND, KO, scfa_col),
+    by = "KO",
+    relationship = "many-to-many"
+  ) %>%
+  mutate(
+    Concentration = case_when(
+      scfa_col == "acetate" ~ acetate,
+      scfa_col == "propionate" ~ propionate,
+      scfa_col == "butyrate" ~ butyrate,
+      scfa_col == "isobutyrate" ~ isobutyrate,
+      scfa_col == "isovalerate" ~ isovalerate,
+      scfa_col == "valerate" ~ valerate,
+      scfa_col == "BCFA" ~ BCFA,
+      scfa_col == "SCFA" ~ SCFA,
+      TRUE ~ NA_real_
+    )
+  )
+cor_results <- cor_data %>%
+  dplyr::group_by(COMPOUND, scfa_col, KO) %>%
+  dplyr::summarise(
+    n = sum(complete.cases(KO_abundance, Concentration)),
+    rho = suppressWarnings(cor(KO_abundance, Concentration,
+                               method = "spearman",
+                               use = "complete.obs")),
+    pval = suppressWarnings(cor.test(KO_abundance, Concentration,
+                                     method = "spearman")$p.value),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    padj = p.adjust(pval, method = "BH"),
+    direction = ifelse(rho > 0, "Positive", "Negative")
+  ) %>%
+  dplyr::arrange(padj, desc(abs(rho)))
+
+cor_results
+cor_results %>% dplyr::filter(padj < 0.05)
+# Plot top 100 KO-SCFA correlations
+top_hits <- cor_results %>%
+  filter(!is.na(rho)) %>%
+  arrange(padj, desc(abs(rho))) %>%
+  slice_head(n = 100)
+
+plot_data <- cor_data %>%
+  semi_join(top_hits, by = c("COMPOUND", "scfa_col", "KO"))
+
+ggplot(plot_data, aes(x = KO_abundance, y = Concentration)) +
+  geom_point(aes(color = Diet), size = 3, alpha = 0.8) +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  facet_wrap(~ COMPOUND + KO, scales = "free") +
+  theme_bw() +
+  labs(
+    x = "Predicted KO abundance",
+    y = "Measured SCFA concentration",
+    title = "Correlation between SCFA-related KOs and measured SCFAs"
+  )
+
+# Significant KO-SCFA pairs
+cor_results %>% filter(padj < 0.05)
+############################
+############################
+setwd("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot kimchi and sauerkraut/16s/output272230/picrust")
+ko <- read.table("pred_metagenome_unstrat_kimsau.tsv", header = T)
+
+gbmko <- read.table("modules.tsv", header = T)
+
+metadata <- read.table("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot kimchi and sauerkraut/16s/output272230/meta.tsv" , sep='\t', header=T, row.names=1, comment="")
+metadata<- metadata[-c(55:58),]#REMOVING BLANKS AND MOCKS
+# Create a new column for cage mate groups
+metadata$CageGroup <- gsub("(\\d+[A-Za-z]+)\\d+", "\\1", metadata$Cage)
+anno <- read.delim("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/16s/final280180/pathways/annotated_pathways.txt", header = T)
+###########################################################################
+ko <- gbmko
+ko <- as.data.frame(ko)
+ko <- column_to_rownames(ko, var = colnames(ko)[1])
+ko <- t(ko)
+ko <- ko[, grepl("^MGB", colnames(ko)) & as.numeric(sub("MGB", "", colnames(ko))) <= 56]
+#############
+rownames(ko) <- sub("_S\\d+$", "", rownames(ko))
+common_ids <- intersect(rownames(ko), scfa_w_diet$ID)
+ko_sub <- ko[common_ids, , drop = FALSE]
+scfa_sub <- scfa_w_diet %>%
+  filter(ID %in% common_ids)
+scfa_sub <- scfa_sub[match(common_ids, scfa_sub$ID), ]
+#all(rownames(ko_sub) == scfa_sub$ID)
+library(dplyr)
+library(tidyr)
+library(purrr)
+
+# MGB pathways of interest
+mgb_interest <- tibble::tribble(
+  ~MGB,    ~Pathway,                  ~SCFA,
+  "MGB043", "Acetate synthesis I",     "acetate",
+  "MGB044", "Acetate synthesis II",    "acetate",
+  "MGB045", "Acetate synthesis III",   "acetate",
+  "MGB046", "Acetate synthesis IV",    "acetate",
+  "MGB047", "Acetate degradation",     "acetate",
+  "MGB048", "Propionate synthesis I",  "propionate",
+  "MGB054", "Propionate synthesis II", "propionate",
+  "MGB055", "Propionate synthesis III","propionate",
+  "MGB056", "Propionate degradation I","propionate",
+  "MGB052", "Butyrate synthesis I",    "butyrate",
+  "MGB053", "Butyrate synthesis II",   "butyrate"
+)
+
+# Keep only MGBs present in ko_sub
+mgb_present <- intersect(mgb_interest$MGB, colnames(ko_sub))
+
+ko_mgb <- ko_sub[, mgb_present, drop = FALSE]
+
+# Ensure sample order matches
+scfa_sub <- scfa_sub[match(rownames(ko_mgb), scfa_sub$ID), ]
+
+stopifnot(all(rownames(ko_mgb) == scfa_sub$ID))
+
+# Combine SCFA + selected MGB pathways
+merged_mgb <- cbind(
+  scfa_sub[, c("ID", "Diet", "acetate", "propionate", "butyrate")],
+  ko_mgb
+)
+
+# Correlate each MGB with its corresponding SCFA
+cor_mgb_results <- mgb_interest %>%
+  filter(MGB %in% colnames(merged_mgb)) %>%
+  mutate(test = map2(MGB, SCFA, ~ cor.test(
+    merged_mgb[[.x]],
+    merged_mgb[[.y]],
+    method = "spearman",
+    exact = FALSE
+  ))) %>%
+  transmute(
+    SCFA,
+    MGB,
+    Pathway,
+    rho = map_dbl(test, ~ unname(.x$estimate)),
+    p_value = map_dbl(test, ~ .x$p.value)
+  ) %>%
+  mutate(p_adj_BH = p.adjust(p_value, method = "BH")) %>%
+  arrange(p_adj_BH)
+
+cor_mgb_results
+ggplot(cor_mgb_results, aes(x = SCFA, y = Pathway, fill = rho)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(limits = c(-1, 1)) +
+  theme_minimal() +
+  labs(
+    title = "Spearman correlations between measured SCFAs and predicted MGB pathways",
+    x = "Measured SCFA",
+    y = "Predicted MGB pathway",
+    fill = "Spearman rho"
+  )
+###############################
+################################
+###################################
+#kombucha and wk
+ko <- read.table("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/16s/final_With_controls/GBM/modules.tsv", header = T)
+ko <- ko[,-c(13,14,23,30,32,22)]#REMOVING BLANKS AND MOCKS
+
+metadata <- read.table("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/16s/final_With_controls/metadata_final.tsv" , sep='\t', header=T, row.names=1, comment="")
+metadata<- metadata[-c(25,26,27,28,29,30,31,35),]#REMOVING BLANKS AND MOCKS
+metadata$fermentation_status <- ifelse(metadata$diet %in% c("tea", "fig", "sc"), "unfermented", "fermented")
+anno <- read.delim("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2_mice/annotated_pathways.txt", header = T)
+anno <- anno[c(1:56),]
+##########################################
+ko <- as.data.frame(ko)
+ko <- column_to_rownames(ko, var = colnames(ko)[1])
+ko <- t(ko)
+rownames(ko) <- sub("_S\\d+$", "", rownames(ko))
+##########
+##########
+all_scfa <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/SCFA results kimsau.csv")
+meta <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/meta_kimsau.csv")
+sc <- meta %>% filter(grepl("SC", Diet))
+meta <- meta %>% filter(!grepl("SC", Diet))
+meta <- meta[-c(43:48),]
+sc_data <- all_scfa %>%
+  filter(all_scfa$Sample_ID %in% sc$sample_id)
+sc_long <- sc_data %>%
+  pivot_longer(
+    cols = -c(Sample_ID, ID),
+    names_to = "Feature",
+    values_to = "Concentration"
+  ) %>%
+  mutate(
+    Diet = "standard chow"
+  )
+sc_long <- sc_long[,-1]
+setwd("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/SCFA/")
+wk_scfa <- read.csv("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/SCFA/network_scfa.csv")
+colnames(wk_scfa) <- c("ID", "Concentration", "Feature", "Diet")
+combined_scfa <- bind_rows(wk_scfa, sc_long)
+ko_sub <- ko[rownames(ko) %in% combined_scfa$ID, , drop = FALSE]
+# vector of MGBs of interest
+mgb_cols <- mgb_interest$MGB
+# keep only those columns (and only if they exist in ko_sub)
+ko_sub <- ko_sub[, intersect(mgb_cols, colnames(ko_sub)), drop = FALSE]
+
+scfa_sub <- combined_scfa %>%
+  dplyr::filter(Feature %in% c("acetate", "propionate", "butyrate")) %>%
+  dplyr::group_by(ID, Diet, Feature) %>%
+  dplyr::summarise(Concentration = mean(Concentration), .groups = "drop") %>%
+  tidyr::pivot_wider(
+    names_from = Feature,
+    values_from = Concentration
+  )
+
+
+
+# Keep only common samples
+common_ids <- intersect(rownames(ko_sub), scfa_sub$ID)
+
+ko_sub2 <- ko_sub[common_ids, , drop = FALSE]
+
+scfa_sub <- scfa_sub %>%
+  filter(ID %in% common_ids) %>%
+  arrange(match(ID, common_ids))
+
+stopifnot(all(rownames(ko_sub2) == scfa_sub$ID))
+
+# Keep only MGBs present
+mgb_present <- intersect(mgb_interest$MGB, colnames(ko_sub2))
+
+ko_mgb <- ko_sub2[, mgb_present, drop = FALSE]
+
+# Combine SCFA + selected MGB pathways
+merged_mgb <- cbind(
+  scfa_sub[, c("ID", "Diet", "acetate", "propionate", "butyrate")],
+  ko_mgb
+)
+
+# Correlate each MGB with its corresponding SCFA
+cor_mgb_results <- mgb_interest %>%
+  filter(MGB %in% colnames(merged_mgb)) %>%
+  mutate(
+    test = map2(MGB, SCFA, ~ cor.test(
+      merged_mgb[[.x]],
+      merged_mgb[[.y]],
+      method = "spearman",
+      exact = FALSE
+    ))
+  ) %>%
+  transmute(
+    SCFA,
+    MGB,
+    Pathway,
+    rho = map_dbl(test, ~ unname(.x$estimate)),
+    p_value = map_dbl(test, ~ .x$p.value)
+  ) %>%
+  mutate(p_adj_BH = p.adjust(p_value, method = "BH")) %>%
+  arrange(p_adj_BH)
+
+cor_mgb_results
+
+# Heatmap
+ggplot(cor_mgb_results, aes(x = SCFA, y = Pathway, fill = rho)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(limits = c(-1, 1)) +
+  theme_minimal() +
+  labs(
+    title = "Spearman correlations between measured SCFAs and predicted MGB pathways",
+    x = "Measured SCFA",
+    y = "Predicted MGB pathway",
+    fill = "Spearman rho"
+  )
+############
+############
+#mining for SCFA KO
+ko <- read.table("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/16s/final_With_controls/GBM/pred_metagenome_unstrat.tsv", header = T)
+# Samples to retain: row names of metadata
+samples_keep <- rownames(metadata)
+
+# Keep KO column + only sample columns present in metadata
+ko_filtered <- ko[, c("KO", intersect(samples_keep, colnames(ko))), drop = FALSE]
+
+# Check dimensions and retained sample names
+dim(ko_filtered)
+head(ko_filtered)
+
+# Optional: confirm all retained KO sample columns are in metadata
+all(colnames(ko_filtered)[-1] %in% rownames(metadata))
+#mined SCFA ko
+##############################
+scfa_ko <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/SCFA_KO.csv")
+library(tibble)
+colnames(scfa_ko) <- as.character(unlist(scfa_ko[1, ]))
+scfa_ko <- scfa_ko[-1, ]
+##########
+###########
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(purrr)
+
+# 1. Clean KO names of interest
+ko_interest <- scfa_ko %>%
+  mutate(
+    KO = trimws(KO),
+    COMPOUND = trimws(COMPOUND)
+  ) %>%
+  distinct()
+# Keep only KOs in ko_filtered that are listed in ko_interest$KO
+ko_filtered_interest <- ko_filtered[ko_filtered$KO %in% ko_interest$KO, , drop = FALSE]
+setwd("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/SCFA/")
+wk_scfa <- read.csv("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/SCFA/network_scfa.csv")
+colnames(wk_scfa) <- c("ID", "Concentration", "Feature", "Diet")
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+
+# ============================================================
+# 1. Keep only metadata samples in KO table
+# ============================================================
+
+samples_keep <- rownames(metadata)
+samples_keep <- samples_keep[samples_keep %in% colnames(ko)]
+
+ko_filtered <- ko[, c("KO", samples_keep), drop = FALSE]
+
+# ============================================================
+# 2. Keep only SCFA-related KOs from ko_interest
+# ============================================================
+
+ko_filtered_interest <- ko_filtered %>%
+  dplyr::filter(KO %in% unique(ko_interest$KO))
+
+# ============================================================
+# 3. Convert KO table to long format
+#    Example: PI_1_S1 becomes PI_1
+# ============================================================
+
+ko_long <- ko_filtered_interest %>%
+  tidyr::pivot_longer(
+    cols = -KO,
+    names_to = "Sample",
+    values_to = "KO_abundance"
+  ) %>%
+  dplyr::mutate(
+    ID = stringr::str_replace(Sample, "_S[0-9]+$", "")
+  ) %>%
+  dplyr::left_join(
+    ko_interest %>%
+      dplyr::mutate(COMPOUND = tolower(COMPOUND)),
+    by = "KO"
+  )
+
+# ============================================================
+# 4. Prepare measured SCFA table from combined_scfa
+#    Uses mean if there are repeated measurements per ID + Feature
+# ============================================================
+
+scfa_long <- combined_scfa %>%
+  dplyr::mutate(
+    ID = as.character(ID),
+    Feature = tolower(Feature),
+    Diet = as.character(Diet)
+  ) %>%
+  dplyr::group_by(ID, Feature, Diet) %>%
+  dplyr::summarise(
+    Concentration = mean(Concentration, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Check
+head(scfa_long)
+dim(scfa_long)
+
+# ============================================================
+# 5. Join KO abundance with matching measured SCFA
+#    KO COMPOUND must match measured Feature
+# ============================================================
+
+cor_data <- ko_long %>%
+  dplyr::inner_join(
+    scfa_long,
+    by = c("ID", "COMPOUND" = "Feature")
+  )
+
+# Check joined data
+head(cor_data)
+dim(cor_data)
+table(cor_data$COMPOUND)
+
+# ============================================================
+# 6. Spearman correlation for each SCFA compound-specific KO
+# ============================================================
+
+cor_results <- cor_data %>%
+  dplyr::group_by(COMPOUND, KO) %>%
+  dplyr::summarise(
+    n = sum(!is.na(KO_abundance) & !is.na(Concentration)),
+    rho = ifelse(
+      n >= 3,
+      cor(
+        KO_abundance,
+        Concentration,
+        method = "spearman",
+        use = "complete.obs"
+      ),
+      NA_real_
+    ),
+    pvalue = ifelse(
+      n >= 3,
+      cor.test(
+        KO_abundance,
+        Concentration,
+        method = "spearman",
+        exact = FALSE
+      )$p.value,
+      NA_real_
+    ),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    padj = p.adjust(pvalue, method = "BH"),
+    direction = dplyr::case_when(
+      rho > 0 ~ "Positive",
+      rho < 0 ~ "Negative",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  dplyr::arrange(padj, dplyr::desc(abs(rho)))
+
+cor_results
+
+# ============================================================
+# 7. Optional: keep strong/significant correlations
+# ============================================================
+
+sig_cor_results <- cor_results %>%
+  dplyr::filter(
+    !is.na(padj),
+    padj < 0.05,
+    abs(rho) >= 0.4
+  )
+
+sig_cor_results
+
+# ============================================================
+# 8. Plot top 10 KO-SCFA correlations
+# ============================================================
+
+top_hits <- cor_results %>%
+  dplyr::filter(!is.na(rho)) %>%
+  dplyr::arrange(padj, dplyr::desc(abs(rho))) %>%
+  dplyr::slice_head(n = 100)
+
+plot_data <- cor_data %>%
+  dplyr::semi_join(top_hits, by = c("COMPOUND", "KO"))
+
+ggplot(plot_data, aes(x = KO_abundance, y = Concentration)) +
+  geom_point(aes(color = Diet), size = 3, alpha = 0.8) +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  facet_wrap(~ COMPOUND + KO, scales = "free") +
+  theme_bw() +
+  labs(
+    x = "Predicted KO abundance",
+    y = "Measured SCFA concentration",
+    title = "Correlation between SCFA-related KOs and measured SCFAs"
+  )
+
