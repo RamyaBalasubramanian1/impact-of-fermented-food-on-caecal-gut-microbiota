@@ -1,0 +1,723 @@
+# #install.packages("installr")
+# #library(installr)
+# #updateR()
+# oo <- options(repos = "https://cran.r-project.org/")
+# utils::install.packages("Matrix")
+# utils::install.packages("lme4")
+library(lme4)
+library(tidyr)
+library(tidyverse)
+library(dplyr)
+library(Matrix)
+#install.packages("emmeans")
+library(emmeans)
+library(outliers)
+library(ggplot2)
+library(patchwork)
+library(lmerTest)
+#install.packages("nparLD")
+library(nparLD)
+library(car)
+##feeding efficiency ratios
+setwd("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025")
+weight <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/mice_weights_compiled_WKKOM.csv", stringsAsFactors=T)
+head(weight)
+data_wk <- weight
+######################################
+#devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+# Calculate the delta weight gain between weeks
+data_wk$delta_W2<- data_wk$W2 - data_wk$W1
+data_wk$delta_W3 <- data_wk$W3 - data_wk$W2
+data_wk$delta_W4 <- data_wk$W4 - data_wk$W3
+data_wk$delta_W5 <- data_wk$W5 - data_wk$W4
+data_wk$delta_W6 <- data_wk$W6 - data_wk$W5
+data_wk$delta_W7 <- data_wk$W7 - data_wk$W6
+data_wk$delta_W8 <- data_wk$W8 - data_wk$W7
+data_wk$delta_W9 <- data_wk$W9 - data_wk$W8
+data_wk$delta_W10 <- data_wk$W10 - data_wk$W9
+data_wk$delta_W11 <- data_wk$W11 - data_wk$W10
+data_wk$delta_W12 <- data_wk$W12 - data_wk$W11
+#############################################
+data_wk <- data_wk[,c(1, 14:24)]
+
+delta_cols <- grep("delta_W", names(data_wk), value = TRUE)
+subset_data_wk <- data_wk[ , c("Cage","diet", delta_cols)]
+
+
+total_gain_per_week_wk <- aggregate(. ~ Cage +diet, data = subset_data_wk, sum, na.rm = TRUE)
+
+print(total_gain_per_week_wk)
+########################################
+total_gain_per_week_wk_OG <- total_gain_per_week_wk[,-11]
+total_gain_per_week_wk <- total_gain_per_week_wk_OG
+#####################################
+weight <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/mice_weights_compiled_Saukim.csv", stringsAsFactors=T)
+head(weight)
+data_sk <- weight
+data_sk$delta_W2<- data_sk$W2 - data_sk$W1
+data_sk$delta_W3 <- data_sk$W3 - data_sk$W2
+data_sk$delta_W4 <- data_sk$W4 - data_sk$W3
+data_sk$delta_W5 <- data_sk$W5 - data_sk$W4
+data_sk$delta_W6 <- data_sk$W6 - data_sk$W5
+data_sk$delta_W7 <- data_sk$W7 - data_sk$W6
+data_sk$delta_W8 <- data_sk$W8 - data_sk$W7
+data_sk$delta_W9 <- data_sk$W9 - data_sk$W8
+data_sk$delta_W10 <- data_sk$W10 - data_sk$W9
+data_sk$delta_W11 <- data_sk$W11 - data_sk$W10
+data_sk$delta_W12 <- data_sk$W12 - data_sk$W11
+data_sk <- data_sk[,c(1, 14:24)]
+#################################################################
+#################################################################
+
+delta_cols <- grep("delta_W", names(data_sk), value = TRUE)
+subset_data_sk <- data_sk[ , c("Cage", "diet", delta_cols)]
+
+
+total_gain_per_week_sk_OG <- aggregate(. ~ Cage + diet, data = subset_data_sk, sum, na.rm = TRUE)
+total_gain_per_week_sk <- total_gain_per_week_sk_OG
+################################################
+fer <-  read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/FER.csv", stringsAsFactors=T)
+fer <- fer[,-c(11,12)]
+#################################
+
+fer_wk <- fer %>% filter(diet %in% c("kombucha", "tea", "water kefir", "fig", "Teklad"))
+fer_wk$Cage <- as.character(fer_wk$Cage)
+fer_wk$diet <- as.character(fer_wk$diet)
+total_gain_per_week_wk$Cage <- as.character(total_gain_per_week_wk$Cage)
+total_gain_per_week_wk$diet <- as.character(total_gain_per_week_wk$diet)
+
+fer_wk <- fer_wk[match(
+  paste(total_gain_per_week_wk$Cage, total_gain_per_week_wk$diet),
+  paste(fer_wk$Cage, fer_wk$diet)
+), ]
+
+
+fer_wk <- fer_wk[ , -(1:2)]
+
+total_gain_per_week_wk <- total_gain_per_week_wk[ , -(1:2)]
+
+divided <- total_gain_per_week_wk / fer_wk 
+divided[is.na(divided)] <- 0
+divided <- divided *100
+
+result <- cbind(total_gain_per_week_wk_OG[ , 1:2], divided)
+result <- result %>%
+  rowwise() %>%
+  mutate(mean_efficiency = mean(c_across(delta_W2:delta_W9))) %>%
+  ungroup()
+################################
+result_hist <- result[,c(1,2,11)]
+x <- ggplot(result_hist, aes(x = diet, y = mean_efficiency, fill = diet)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.6, width = 0.5) +  # Boxplot without default outliers
+  geom_jitter(width = 0.1, size = 2, shape = 21, color = "black") +  # Jittered individual points
+  labs(
+    title = "Feeding Efficiency by Diet",
+    x = "Diet",
+    y = "Mean Feeding Efficiency (%)"
+  ) +
+  theme_minimal()
+model <- lm(mean_efficiency ~ diet, data = result_hist)
+shapiro.test(residuals(model))#normally distributed
+anova_result <- aov(mean_efficiency ~ diet, data = result_hist)
+summary(anova_result)#diet affects FER
+TukeyHSD(anova_result)
+############################################
+result_hist <- subset(result_hist,diet != "Teklad")
+shapiro.test(result_hist$mean_efficiency)
+anova_result <- aov(mean_efficiency ~ diet, data = result_hist)
+summary(anova_result)#diet affects FER
+x2 <- ggplot(result_hist, aes(x = diet, y = mean_efficiency, fill = diet)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.6, width = 0.5) +  # Boxplot without default outliers
+  geom_jitter(width = 0.1, size = 2, shape = 21, color = "black") +  # Jittered individual points
+  labs(
+    title = "Feeding Efficiency by Diet",
+    x = "Diet",
+    y = "Mean Feeding Efficiency (%)"
+  ) +
+  theme_minimal()
+##############################################
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/fer_wk_onlybev.svg", plot = x2, width = 12, height = 6, units = "in")
+##################################################
+###following for week wise#####################
+long_result <- pivot_longer(
+  result,
+  cols = starts_with("delta_W"),
+  names_to = "Week",
+  values_to = "Efficiency"
+)
+
+long_result$Week <- gsub("delta_W", "Week ", long_result$Week)
+#################################################################
+#################################################################
+
+remove_grubbs_outliers <- function(x) {
+  repeat {
+    test <- grubbs.test(x)
+    p_val <- test$p.value
+    if (p_val < 0.05) {
+      x <- x[-which.max(abs(x - mean(x, na.rm = TRUE)))]
+    } else {
+      break
+    }
+  }
+  return(x)
+}
+clean_result <- long_result %>%
+  dplyr::group_by(Week) %>%
+  dplyr::mutate(
+    is_outlier = Efficiency %in% setdiff(Efficiency, remove_grubbs_outliers(Efficiency))
+  ) %>%
+  dplyr::filter(!is_outlier) %>%
+  dplyr::select(-is_outlier)
+#removing the baseline weeks
+clean_result <- clean_result %>%
+  filter(!(Week %in% c("Week 2", "Week 3")))
+p <- ggplot(clean_result, aes(x = Week, y = Efficiency, color = diet, group = diet)) +
+  stat_summary(fun = mean, geom = "line", size = 1.2) +               # mean line per diet
+  stat_summary(fun = mean, geom = "point", size = 2) +                # mean points per diet
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +  # error bars (SE)
+  labs(
+    title = "Mean Feeding Efficiency Over Time by Diet",
+    x = "Week",
+    y = "Feeding Efficiency (%)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+###############
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/Figures/fer_wk_every_week.svg", plot = p, width = 12, height = 6, units = "in")
+########
+anova_model <- aov(Efficiency ~ diet * Week, data = clean_result)
+summary(anova_model)
+posthoc <- emmeans(anova_model, pairwise ~ diet | Week, adjust = "bonferroni")
+###########################################################################################
+#doing the same for sk
+###########################################################################################
+fer <-  read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/FER.csv", stringsAsFactors=T)
+fer <- fer[,-c(11,12)]
+fer_sk <- fer %>% filter(diet %in% c("Sauerkraut", "Cabbage", "TM", "Kimchi", "Teklad-M"))
+fer_sk$Cage <- as.character(fer_sk$Cage)
+fer_sk$diet <- as.character(fer_sk$diet)
+total_gain_per_week_sk$Cage <- as.character(total_gain_per_week_sk$Cage)
+total_gain_per_week_sk$diet <- as.character(total_gain_per_week_sk$diet)
+
+fer_sk <- fer_sk[match(
+  paste(total_gain_per_week_sk$Cage, total_gain_per_week_sk$diet),
+  paste(fer_sk$Cage, fer_sk$diet)
+), ]
+
+
+fer_sk <- fer_sk[ , -(1:2)]
+
+total_gain_per_week_sk <- total_gain_per_week_sk[ , -(1:2)]
+
+divided <- total_gain_per_week_sk / fer_sk 
+divided[is.na(divided)] <- 0
+divided <- divided *100
+
+result <- cbind(total_gain_per_week_sk_OG[ , 1:2], divided)
+###########################################
+result_hist <- result %>%
+  rowwise() %>%
+  mutate(mean_efficiency = mean(c_across(delta_W2:delta_W9))) %>%
+  ungroup()
+################################
+
+result_hist <- result_hist[,c(1,2,11)]
+model <- lm(mean_efficiency ~ diet, data = result_hist)
+x1 <- ggplot(result_hist, aes(x = diet, y = mean_efficiency, fill = diet)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.6, width = 0.5) +  # Boxplot without default outliers
+  geom_jitter(width = 0.1, size = 2, shape = 21, color = "black") +  # Jittered individual points
+  labs(
+    title = "Feeding Efficiency by Diet",
+    x = "Diet",
+    y = "Mean Feeding Efficiency (%)"
+  ) +
+  theme_minimal()
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/Figures/fer_sk.svg", plot = x1, width = 12, height = 6, units = "in")
+shapiro.test(residuals(model))
+
+anova_result <- aov(mean_efficiency ~ diet, data = result_hist)
+summary(anova_result)#diet affects FER
+#ns
+
+
+long_result <- pivot_longer(
+  result,
+  cols = starts_with("delta_W"),
+  names_to = "Week",
+  values_to = "Efficiency"
+)
+
+long_result$Week <- gsub("delta_W", "Week ", long_result$Week)
+#################################################################
+#################################################################
+
+remove_grubbs_outliers <- function(x) {
+  repeat {
+    test <- grubbs.test(x)
+    p_val <- test$p.value
+    if (p_val < 0.05) {
+      x <- x[-which.max(abs(x - mean(x, na.rm = TRUE)))]
+    } else {
+      break
+    }
+  }
+  return(x)
+}
+clean_result <- long_result %>%
+  dplyr::group_by(Week) %>%
+  dplyr::mutate(
+    is_outlier = Efficiency %in% setdiff(Efficiency, remove_grubbs_outliers(Efficiency))
+  ) %>%
+  dplyr::filter(!is_outlier) %>%
+  dplyr::select(-is_outlier)
+#removing the baseline weeks
+clean_result <- clean_result %>%
+  filter(!(Week %in% c("Week 2", "Week 3")))
+
+
+q <- ggplot(clean_result, aes(x = Week, y = Efficiency, color = diet, group = diet)) +
+  stat_summary(fun = mean, geom = "line", size = 1.2) +               # mean line per diet
+  stat_summary(fun = mean, geom = "point", size = 2) +                # mean points per diet
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +  # error bars (SE)
+  labs(
+    title = "Mean Feeding Efficiency Over Time by Diet",
+    x = "Week",
+    y = "Feeding Efficiency (%)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/fer_sk_weekly.svg", plot = q, width = 12, height = 6, units = "in")
+###############
+########
+anova_model <- aov(Efficiency ~ diet * Week, data = clean_result)
+summary(anova_model)
+posthoc <- emmeans(anova_model, pairwise ~ diet | Week, adjust = "bonferroni")#week wise significance
+####################################################
+#doing weight gain
+
+##########################################
+##########################################
+#single time point
+setwd("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025")
+weight <- read.csv("raw_data/mice_weights_compiled_WKKOM.csv", stringsAsFactors=T)
+head(weight)
+data_wk <- weight
+###############
+weight <- read.csv("raw_data/mice_weights_compiled_Saukim.csv", stringsAsFactors=T)
+head(weight)
+data_sk <- weight
+####################
+weight_gain_wk <- data_wk[,c(1,2,13,14)]
+weight_gain_sk <- data_sk[,c(1,2,14,15)]
+weight_gain_wk$weight_gain <- weight_gain_wk$W12 - weight_gain_wk$W1
+#overall weight gain throughout the duration of trial
+p <- ggplot(weight_gain_wk, aes(x = diet, y = weight_gain)) +
+  geom_boxplot(aes(color = diet, fill = diet), alpha = 0.5) +
+  geom_point(aes(fill = diet), shape = 21, color = "black",
+             position = position_jitter(width = 0.2), size = 2) +
+  labs(title = "Weight Gain by Diet",
+       x = "Diet",
+       y = "Weight Gain") +
+  theme_minimal()
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/Figures/overall_wt_gain_wk.svg", plot = p, width = 12, height = 6, units = "in")
+#############
+weight_gain_sk$weight_gain <- weight_gain_sk$W13 - weight_gain_sk$W1
+q <- ggplot(weight_gain_sk, aes(x = diet, y = weight_gain)) +
+  geom_boxplot(aes(color = diet, fill = diet), alpha = 0.5) +
+  geom_point(aes(fill = diet), shape = 21, color = "black",
+             position = position_jitter(width = 0.2), size = 2) +
+  labs(title = "Weight Gain by Diet",
+       x = "Diet",
+       y = "Weight Gain") +
+  theme_minimal()
+
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/Figures/overall_weight_gain_sk.svg", plot = q, width = 12, height = 6, units = "in")
+##################################################
+#stat weight gain
+#is there an overall difference in weight gain?
+wgwk <- weight_gain_wk[,c(1,4,5)]
+leveneTest(weight_gain ~ diet, data = wgwk)
+shapiro.test(residuals(aov(weight_gain ~ diet, data = wgwk)))
+anova <- aov(weight_gain ~ diet, data = wgwk)
+summary(anova)
+TukeyHSD(anova)
+#############################################
+wgwk_onlybev <- subset(wgwk, diet != "Teklad")
+leveneTest(weight_gain ~ diet, data = wgwk_onlybev)
+shapiro.test(residuals(aov(weight_gain ~ diet, data = wgwk_onlybev)))
+anova <- aov(weight_gain ~ diet, data = wgwk_onlybev)
+summary(anova)
+
+###############################################
+wgsk <- weight_gain_sk[,c(1,4,5)]
+leveneTest(weight_gain ~ diet, data = wgsk)
+shapiro.test(residuals(aov(weight_gain ~ diet, data = wgsk)))
+anova <- aov(weight_gain ~ diet, data = wgsk)
+summary(anova)
+###############
+
+
+
+##################################################
+data_long_wk <- data_wk %>%
+  pivot_longer(
+    cols = starts_with("W"),
+    names_to = "week",
+    values_to = "weight"
+  ) %>%
+  mutate(
+    week = as.numeric(sub("W", "", week))  # Convert 'W1' to 1, etc.
+  )
+shapiro.test(data_long_wk$weight)
+# Convert week to numeric or factor depending on structure
+leveneTest(weight ~ diet, data = data_long_wk)       
+        
+leveneTest(weight ~ interaction(diet, week), data = data_long_wk)
+##########################
+plot(weight ~ diet, data = data_long_wk)#always do this
+model <- lmer(weight ~ diet*week + (1 | Cage.name), data = data_long_wk)#keep intercept always random
+summary(model)
+anova(model)
+emmeans(model, list(pairwise~diet|week), adjust = "bonferroni")
+model <- lmer(weight ~ diet+week + (1 | Cage.name), data = data_long_wk)#keep intercept always random
+anova(model)
+emmeans(model, list(pairwise~diet|week), adjust = "bonferroni")
+shapiro.test(resid(model))
+#################
+#residuals are not normally distributed
+#violates lme4
+#apply glm instead
+#teklad as the reference diet
+
+###############################
+#using glmer
+
+model_glmm <- glmer(
+  weight ~ diet * week + (1 | Cage.name), 
+  data = data_long_wk,
+  family = Gamma(link = "log"),
+  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e5))
+)
+summary(model_glmm)
+emm <- emmeans(model_glmm, ~ diet | week, type = "response")  # back-transformed scale
+pairs(emm, adjust = "bonferroni")
+
+
+
+#################################################################
+#overall effect of diet on weight gain
+data_long_wk$Cage.name <- as.factor(data_long_wk$Cage.name)
+data_long_wk$week <- as.factor(data_long_wk$week)
+data_long_wk$diet <- as.factor(data_long_wk$diet)
+npar_result <- nparLD(weight ~ week * diet,
+                      subject = data_long_wk$Cage.name,
+                      data = data_long_wk)
+
+summary(npar_result)
+
+####################################################################
+data_long_sk <- data_sk %>%
+  pivot_longer(
+    cols = starts_with("W"),
+    names_to = "week",
+    values_to = "weight"
+  ) %>%
+  mutate(
+    week = as.numeric(sub("W", "", week))  # Convert 'W1' to 1, etc.
+  )
+shapiro.test(data_long_sk$weight)
+# Convert week to numeric or factor depending on structure
+leveneTest(weight ~ diet, data = data_long_sk)          
+leveneTest(weight ~ week, data = data_long_sk)       
+data_long_sk$week <- as.factor(data_long_sk$week)
+leveneTest(weight ~ interaction(diet, week), data = data_long_sk)
+##########################
+plot(weight ~ diet, data = data_long_sk)#always do this
+model <- lmer(weight ~ diet*week + (1 | Cage_id), data = data_long_sk)#keep intercept always random
+summary(model)
+anova(model)
+emmeans(model, list(pairwise~diet|week), adjust = "bonferroni")
+model <- lmer(weight ~ diet+week + (1 |Cage_id ), data = data_long_sk)#keep intercept always random
+anova(model)
+emmeans(model, pairwise ~ diet | week, adjust = "bonferroni")
+emmeans(model, list(pairwise~diet|week), adjust = "bonferroni")
+shapiro.test(resid(model))
+#################
+#residuals are not normally distributed
+#violates lme4
+#apply glm instead
+#teklad as the reference diet
+
+###############################
+#using glmer
+
+model_glmm <- glmer(
+  weight ~ diet * week + (1 | Cage_id), 
+  data = data_long_sk,
+  family = Gamma(link = "log"),
+  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e5))
+)
+summary(model_glmm)
+emm <- emmeans(model_glmm, ~ diet | week, type = "response")  # back-transformed scale
+pairs(emm, adjust = "bonferroni")
+
+
+
+#################################################################
+#overall effect of diet on weight gain
+data_long_wk$Cage.name <- as.factor(data_long_wk$Cage.name)
+data_long_wk$week <- as.factor(data_long_wk$week)
+data_long_wk$diet <- as.factor(data_long_wk$diet)
+npar_result <- nparLD(weight ~ week * diet,
+                      subject = data_long_wk$Cage.name,
+                      data = data_long_wk)
+
+summary(npar_result)
+####################################################################
+
+#Weight gain profiles
+#####################
+wg_sk <- total_gain_per_week_sk_OG %>%
+  pivot_longer(
+    cols = starts_with("delta_"),
+    names_to = "week",
+    values_to = "weight_gain"  # also fixed the space in name
+  ) %>%
+  mutate(
+    week = as.numeric(gsub("[^0-9]", "", week))
+  )
+shapiro.test(wg_sk$weight_gain)
+# Convert week to numeric or factor depending on structure
+leveneTest(weight_gain ~ diet, data = wg_sk)
+wg_sk$week <- as.factor(wg_sk$week)
+leveneTest(weight_gain ~ week, data = wg_sk)           
+leveneTest(weight_gain ~ interaction(diet, week), data = wg_sk)
+##########################
+plot(weight_gain ~ diet, data = wg_sk)#always do this
+model <- lmer(weight_gain ~ diet*week + (1 | Cage), data = wg_sk)#keep intercept always random
+summary(model)
+anova(model)
+emmeans(model, list(pairwise~diet|week), adjust = "bonferroni")
+model <- lmer(weight_gain ~ diet*week + (1 | Cage), data = wg_sk)#keep intercept always random
+anova(model)
+emmeans(model, list(pairwise~week), adjust = "bonferroni")
+shapiro.test(resid(model))
+#################
+#residuals are not normally distributed
+#violates lme4
+#apply glm instead
+#teklad as the reference diet
+
+###############################
+#if it violates normalcy
+#using glmer
+wg_sk <- wg_sk %>%
+  filter(weight_gain > 0)
+model_glm <- glm(
+  weight_gain ~ diet * week,
+  data = wg_sk,
+  family = Gamma(link = "log")
+)#too little cages for random effect and cage shows baseline for cage is same
+
+summary(model_glm)
+emm <- emmeans(model_glmm, ~ diet | week, type = "response")  # back-transformed scale
+pairs(emm, adjust = "bonferroni")
+####################################
+wg_wk <- total_gain_per_week_wk_OG %>%
+  pivot_longer(
+    cols = starts_with("delta_"),
+    names_to = "week",
+    values_to = "weight_gain"  # also fixed the space in name
+  ) %>%
+  mutate(
+    week = as.numeric(gsub("[^0-9]", "", week))
+  )
+shapiro.test(wg_wk$weight_gain)
+# Convert week to numeric or factor depending on structure
+leveneTest(weight_gain ~ diet, data = wg_wk)
+wg_wk$week <- as.factor(wg_wk$week)
+leveneTest(weight_gain ~ week, data = wg_wk)           
+leveneTest(weight_gain ~ interaction(diet, week), data = wg_wk)
+##########################
+plot(weight_gain ~ diet, data = wg_wk)#always do this
+model <- lmer(weight_gain ~ diet*week + (1 | Cage), data = wg_wk)#keep intercept always random
+summary(model)
+anova(model)
+emmeans(model, list(pairwise~diet), adjust = "bonferroni")#doesnt stratify per time
+emmeans(model, list(pairwise~week), adjust = "bonferroni")#doest tell much
+emmeans(model, list(pairwise~diet|week), adjust = "bonferroni")
+model <- lmer(weight_gain ~ diet*week + (1 | Cage), data = wg_wk)#keep intercept always random
+anova(model)
+emmeans(model, list(pairwise~week), adjust = "bonferroni")
+shapiro.test(resid(model))
+#################
+#residuals are not normally distributed
+#violates lme4
+#apply glm instead
+#teklad as the reference diet
+
+###############################
+#if it violates normalcy
+#using glmer
+wg_sk <- wg_sk %>%
+  filter(weight_gain > 0)
+model_glm <- glm(
+  weight_gain ~ diet * week,
+  data = wg_sk,
+  family = Gamma(link = "log")
+)#too little cages for random effect and cage shows baseline for cage is same
+
+summary(model_glm)
+emm <- emmeans(model_glmm, ~ diet | week, type = "response")  # back-transformed scale
+pairs(emm, adjust = "bonferroni")
+
+##############maybe also do a two way repeated measures anova 
+###################################################################################
+####################################################################################
+#reviewer comment on the amount of feed per mice per cage for kom and kefir
+fer <-  read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/FER.csv", stringsAsFactors=T)
+fer <- fer[,-c(11,12)]
+fer_wk <- fer %>% filter(diet %in% c("kombucha", "tea", "water kefir", "fig", "Teklad"))
+fer_wk$Cage <- as.character(fer_wk$Cage)
+fer_wk$diet <- as.character(fer_wk$diet)
+fer_day <- fer_wk
+num_cols <- sapply(fer_day, is.numeric)
+fer_day[num_cols] <- fer_day[num_cols] / 14
+
+fer_long <- fer_day %>%
+  pivot_longer(
+    cols = where(is.numeric),          # all the week columns
+    names_to = "week",
+    values_to = "consumption"
+  )
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+library(dplyr)
+library(stringr)
+
+fer_plot <- fer_long %>%
+  mutate(
+    week_clean = case_when(
+      str_detect(week, "Baseline") ~ "Baseline",
+      TRUE ~ week
+    )
+  ) %>%
+  group_by(Cage, diet, week_clean) %>%
+  dplyr::summarise(
+    consumption = mean(consumption, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    week_clean = factor(
+      week_clean,
+      levels = c("Baseline", paste0("w", 4:9))
+    )
+  )
+sum_week <- fer_plot %>%
+  group_by(diet, week_clean) %>%
+  dplyr::summarise(
+    mean = mean(consumption, na.rm = TRUE),
+    sd   = sd(consumption, na.rm = TRUE),
+    n    = dplyr::n(),                  # cages
+    sem  = sd / sqrt(n),
+    .groups = "drop"
+  )
+sum_week <- sum_week %>%
+  dplyr::mutate(
+    diet = dplyr::recode(diet,
+                  "Teklad"      = "SC",
+                  "fig"         = "SC+Fig",
+                  "water kefir" = "Water kefir",
+                  "kombucha"    = "SC+Kombucha",
+                  "tea"         = "SC+Tea"))
+ggplot(sum_week, aes(x = week_clean, y = mean, group = diet, color = diet)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = mean - sem, ymax = mean + sem), width = 0.15) +
+  labs(x = "Week", y = "Food intake (g/mouse/day)", color = "Diet") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+m1 <- lmer(consumption ~ diet * week_clean + (1 | Cage), data = fer_plot)
+
+anova(m1)  # tests diet, week, and diet:week
+library(emmeans)
+library(emmeans)
+
+emm_week <- emmeans(m1, ~ diet | week_clean)
+
+pairs_week <- pairs(emm_week, adjust = "BH")
+
+pairs_week
+###################################
+###################################
+###################################
+fer <-  read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/FER.csv", stringsAsFactors=T)
+#fer <- fer[,-c(11,12)]
+fer_sk <- fer %>% filter(diet %in% c("Sauerkraut", "Cabbage", "TM", "Kimchi", "Teklad-M"))
+fer_sk$Cage <- as.character(fer_sk$Cage)
+fer_sk$diet <- as.character(fer_sk$diet)
+fer_day <- fer_sk
+num_cols <- sapply(fer_day, is.numeric)
+
+fer_day <- fer_day %>%
+  mutate(across(c(w10, w11), ~ as.numeric(as.character(.)) / 14))
+fer_day[num_cols] <- fer_day[num_cols] / 14
+fer_long <- fer_day %>%
+  pivot_longer(
+    cols = where(is.numeric),          # all the week columns
+    names_to = "week",
+    values_to = "consumption"
+  )
+fer_plot <- fer_long %>%
+  dplyr::mutate(
+    week_clean = case_when(
+      str_detect(week, "Baseline") ~ "Baseline",
+      TRUE ~ week
+    )
+  ) %>%
+  group_by(Cage, diet, week_clean) %>%
+  dplyr::summarise(consumption = mean(consumption, na.rm = TRUE), .groups = "drop") %>%
+  dplyr::mutate(
+    week_clean = factor(
+      week_clean,
+      levels = c("Baseline", paste0("w", 4:11)) # change 20 to your max week
+    )
+  )
+
+sum_week <- fer_plot %>%
+  group_by(diet, week_clean) %>%
+  dplyr::summarise(
+    mean = mean(consumption, na.rm = TRUE),
+    sd   = sd(consumption, na.rm = TRUE),
+    n    = dplyr::n(),                  # cages
+    sem  = sd / sqrt(n),
+    .groups = "drop"
+  )
+sum_week <- sum_week %>%
+  dplyr::mutate(
+    diet = dplyr::recode(diet,
+                         "Teklad"      = "SC",
+                         "fig"         = "SC+Fig",
+                         "water kefir" = "Water kefir",
+                         "kombucha"    = "SC+Kombucha",
+                         "tea"         = "SC+Tea"))
+ggplot(sum_week, aes(x = week_clean, y = mean, group = diet, color = diet)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = mean - sem, ymax = mean + sem), width = 0.15) +
+  labs(x = "Week", y = "Food intake (g/mouse/day)", color = "Diet") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+library(lme4)
+library(lmerTest)  # gives p-values for fixed effects
+
+m1 <- lmer(consumption ~ diet * week_clean + (1 | Cage), data = fer_plot)
+
+anova(m1)  # tests diet, week, and diet:week
+library(emmeans)
+
+emm <- emmeans(m1, ~ diet | week_clean)                 # diet differences within each week
+pairs(emm, adjust = "BH")                               # or "tukey" / "bonferroni"
