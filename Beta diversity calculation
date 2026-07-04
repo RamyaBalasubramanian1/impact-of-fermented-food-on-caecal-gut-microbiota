@@ -1,0 +1,430 @@
+############DOING THE SAME FOR FIGTEA#######################################################################################################
+setwd("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/16s/final_With_controls")
+# Importing ASVs abundance file
+ASVs <- read_qza("merged_table.qza")
+#setwd("D:/ecoli_run2/rfiles")
+tree <- read_qza("rooted-tree.qza")
+taxonomy <- read_qza("m_taxonomy_assignment.qza")
+metadata <- read.table("metadata_final.tsv" , sep='\t', header=T, row.names=1, comment="")
+# Convert row names into a column named Sample_ID while retaining the row names
+# Duplicate row names into a new column called Sample_ID while retaining row names
+metadata$Sample_ID <- rownames(metadata)
+metadata <- metadata[-c(25:31),]
+metadata$plate <- ifelse(grepl("^SKC", metadata$Sample_ID), 2, 1)
+levels(metadata$diet)[levels(metadata$diet) == "sc"] <- "standard diet"
+tax_table <- do.call(rbind, strsplit(as.character(taxonomy$data$Taxon), "; "))
+colnames(tax_table) <- c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+rownames(tax_table) <- taxonomy$data$Feature.ID
+physeq <- phyloseq(
+  otu_table(ASVs$data, taxa_are_rows = T),
+  tax_table(tax_table),
+  sample_data(metadata), phy_tree(tree$data))
+
+ps <- physeq
+otu <- as.data.frame(otu_table(ps))
+#########################################
+tax <- as.data.frame(tax_table(ps))
+
+#MAKING THIS CLEAN
+taxa_names(ps)[1:5]
+# find and substitute
+taxa_names(ps) <- gsub(taxa_names(ps), pattern = "d__", replacement = "")  
+
+# Check again Taxonomy table
+phyloseq::tax_table(ps)[1:3,1:3] # check for my table show me [1 to 3 otu ids, 1 to 3 first three ranks]. 
+# find and substitute
+taxa_names(ps) <- gsub(taxa_names(ps), pattern = "denovo", replacement = "OTU-")  
+tax_table(ps)[, colnames(tax_table(ps))] <- gsub(tax_table(ps)[, colnames(tax_table(ps))],     pattern = "[a-z]__", replacement = "")
+colnames(tax_table(ps))
+phyloseq::tax_table(ps)[1:3,1:3] # check for my table show me [1 to 3 otu ids, 1 to 3 first three ranks].
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="=*",replacement="")
+########################################################################################
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="g__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="f__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="o__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="c__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="p__",replacement="")
+tax_table(ps)[,colnames(tax_table(ps))] <- gsub(tax_table(ps)[,colnames(tax_table(ps))],pattern="d__",replacement="")
+#ps = subset_taxa(ps, Kingdom == "d__Bacteria")
+head(tax_table(ps))
+########################################################################################
+##we are going to plot the following alpha diversity
+#observed
+#dominance
+#faith
+#shannon if observed and dominance is not done
+ps <- prune_taxa(taxa_sums(ps) > 0, ps)
+#note that dada 2 removes singletons
+#so chao1 not appropriate  because it is singleton sensitive 
+ps.gen <- phyloseq::tax_glom(ps, "Genus", NArm = TRUE)
+ps.family <- phyloseq::tax_glom(ps, "Family", NArm = TRUE)
+ps.ord <- phyloseq::tax_glom(ps, "Order", NArm = TRUE)
+ps.phylum <- phyloseq::tax_glom(ps, "Phylum", NArm = TRUE)
+###########
+
+
+################################
+################################################
+#a more controlled method to do pca plot
+##########################
+tax <- as.data.frame(tax_table(ps.gen))
+tax <- tax[,-7]
+################################
+#metadata <- metadata[-28,]
+otu <- as.data.frame(otu_table(ps.gen))
+
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+
+# Merge PCA scores with metadata
+metadata$SampleID <- rownames(metadata)
+metadata <- as.data.frame(metadata)
+metadata_ordered <- metadata[match(rownames(pca_df), metadata$SampleID), ]
+pca_merged <- cbind(pca_df, metadata)
+
+pca_merged <- pca_merged[,-39]
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+p <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of CLR-transformed data (Genera)",
+    x = pc1_label,
+    y = pc2_label
+  )
+#permanova
+otu_samples <- rownames(clr)
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+set.seed(123)
+#converting phyloseq s4 to df
+metadata_filtered <- data.frame(as(metadata_filtered, "data.frame"))
+metadata_filtered$diet <- factor(as.character(metadata_filtered$diet))
+dist_matrix <- vegdist(clr, method = "euclidean")
+adonis2(dist_matrix ~ cage + diet, data = metadata_filtered, by = "term")
+adonis2(dist_matrix ~ diet, data = metadata_filtered)
+adonis2(dist_matrix ~ cage, data = metadata_filtered)
+#betadisper_test <- betadisper(dist_matrix, metadata_filtered$diet)
+#########
+#########
+# ensure cage and diet exist in sample_data
+sample_data(ps.gen)$cage <- as.factor(sample_data(ps.gen)$cage)
+sample_data(ps.gen)$diet <- as.factor(sample_data(ps.gen)$diet)
+
+# merge samples by cage (sums counts by default)
+ps_cage <- merge_samples(ps.gen, "cage")
+# keep diet label per cage (assumes one diet per cage)
+sd <- as.data.frame(sample_data(ps.gen))
+diet_by_cage <- tapply(sd$diet, sd$cage, function(x) unique(as.character(x))[1])
+sample_data(ps_cage)$diet <- factor(diet_by_cage[rownames(sample_data(ps_cage))])
+
+# extract counts and CLR-transform from scratch at cage level
+otu_cage <- as.data.frame(otu_table(ps_cage))
+clr_cage <- clr_c(otu_cage)
+
+# distance & PERMANOVA (diet test with cages as units)
+dist_cage <- dist(clr_cage, method = "euclidean")
+adonis2(dist_cage ~ diet, data = data.frame(diet = sample_data(ps_cage)$diet))
+
+# make sure groups are clean
+metadata_filtered$diet <- droplevels(factor(metadata_filtered$diet))
+meta_cage <- data.frame(
+  DietGroup = factor(as.character(sample_data(ps_cage)$diet))
+)
+pairwise_results_cage <- pairwise.adonis(
+  x = as.matrix(dist_cage),
+  factors = meta_cage$DietGroup,
+  sim.method = "euclidean",
+  perm = 999,
+  p.adjust.m = "BH"
+)
+pairwise_results_cage
+##############################################################
+tax <- as.data.frame(tax_table(ps.family))
+tax <- tax[,-c(6,7)]
+################################
+#doing the same for family
+otu <- as.data.frame(otu_table(ps.family))
+
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+
+metadata$SampleID <- rownames(metadata)
+metadata <- as.data.frame(metadata)
+metadata <- metadata[match(rownames(pca_df), metadata$SampleID), ]
+pca_merged <- cbind(pca_df, metadata)
+pca_merged <- pca_merged[,-39]
+
+
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+q <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of CLR-transformed OTU Data (Family)",
+    x = pc1_label,
+    y = pc2_label
+  )
+#permanova
+otu_samples <- rownames(clr)
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+
+#converting phyloseq s4 to df
+metadata_filtered <- data.frame(as(metadata_filtered, "data.frame"))
+metadata_filtered$diet <- factor(as.character(metadata_filtered$diet))
+dist_matrix <- vegdist(clr, method = "euclidean")
+adonis2(dist_matrix ~ diet, data = metadata_filtered)
+adonis2(dist_matrix ~ cage, data = metadata_filtered)
+adonis2(dist_matrix ~ cage +diet, data = metadata_filtered, by = "term")
+betadisper_test <- betadisper(dist_matrix, metadata_filtered$diet)
+anova(betadisper_test)
+plot(betadisper_test)
+#cage effects
+# ensure cage and diet exist in sample_data
+sample_data(ps.family)$cage <- as.factor(sample_data(ps.family)$cage)
+sample_data(ps.family)$diet <- as.factor(sample_data(ps.family)$diet)
+
+# merge samples by cage (sums counts by default)
+ps_cage <- merge_samples(ps.family, "cage")
+# keep diet label per cage (assumes one diet per cage)
+sd <- as.data.frame(sample_data(ps.family))
+diet_by_cage <- tapply(sd$diet, sd$cage, function(x) unique(as.character(x))[1])
+sample_data(ps_cage)$diet <- factor(diet_by_cage[rownames(sample_data(ps_cage))])
+
+# extract counts and CLR-transform from scratch at cage level
+otu_cage <- as.data.frame(otu_table(ps_cage))
+clr_cage <- clr_c(otu_cage)
+
+# distance & PERMANOVA (diet test with cages as units)
+dist_cage <- dist(clr_cage, method = "euclidean")
+adonis2(dist_cage ~ diet, data = data.frame(diet = sample_data(ps_cage)$diet))
+meta_cage <- data.frame(
+  DietGroup = factor(as.character(sample_data(ps_cage)$diet))
+)
+pairwise_results_cage <- pairwise.adonis(
+  x = as.matrix(dist_cage),
+  factors = meta_cage$DietGroup,
+  sim.method = "euclidean",
+  perm = 999,
+  p.adjust.m = "BH"
+)
+pairwise_results_cage
+###########
+###########
+
+
+################################
+#doing the same for order
+otu <- as.data.frame(otu_table(ps.ord))
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+metadata$SampleID <- rownames(metadata)
+metadata <- as.data.frame(metadata)
+metadata <- metadata[match(rownames(pca_df), metadata$SampleID), ]
+pca_merged <- cbind(pca_df, metadata)
+pca_merged <- pca_merged[,-39]
+
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+r <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of CLR-transformed OTU Data (Order)",
+    x = pc1_label,
+    y = pc2_label
+  )
+#permanova
+otu_samples <- rownames(clr)
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+
+#converting phyloseq s4 to df
+metadata_filtered <- data.frame(as(metadata_filtered, "data.frame"))
+metadata_filtered$diet <- factor(as.character(metadata_filtered$diet))
+dist_matrix <- vegdist(clr, method = "euclidean")
+adonis2(dist_matrix ~  diet , data = metadata_filtered)
+adonis2(dist_matrix ~  cage, data = metadata_filtered)
+adonis2(dist_matrix ~  cage+diet, data = metadata_filtered, by = "term")
+betadisper_test <- betadisper(dist_matrix, metadata_filtered$diet)
+anova(betadisper_test)
+plot(betadisper_test)
+##accounting for cage
+# ensure cage and diet exist in sample_data
+sample_data(ps.ord)$cage <- as.factor(sample_data(ps.ord)$cage)
+sample_data(ps.ord)$diet <- as.factor(sample_data(ps.ord)$diet)
+
+# merge samples by cage (sums counts by default)
+ps_cage <- merge_samples(ps.ord, "cage")
+# keep diet label per cage (assumes one diet per cage)
+sd <- as.data.frame(sample_data(ps.ord))
+diet_by_cage <- tapply(sd$diet, sd$cage, function(x) unique(as.character(x))[1])
+sample_data(ps_cage)$diet <- factor(diet_by_cage[rownames(sample_data(ps_cage))])
+
+# extract counts and CLR-transform from scratch at cage level
+otu_cage <- as.data.frame(otu_table(ps_cage))
+clr_cage <- clr_c(otu_cage)
+
+# distance & PERMANOVA (diet test with cages as units)
+dist_cage <- dist(clr_cage, method = "euclidean")
+adonis2(dist_cage ~ diet, data = data.frame(diet = sample_data(ps_cage)$diet))
+
+meta_cage <- data.frame(
+  DietGroup = factor(as.character(sample_data(ps_cage)$diet))
+)
+pairwise_results_cage <- pairwise.adonis(
+  x = as.matrix(dist_cage),
+  factors = meta_cage$DietGroup,
+  sim.method = "euclidean",
+  perm = 999,
+  p.adjust.m = "BH"
+)
+pairwise_results_cage
+#######################
+######################
+#doing the same for phylum
+otu <- as.data.frame(otu_table(ps.phylum))
+otu <- as.data.frame(otu)
+totu <- t(otu)
+totu <- apply(totu,c(1,2),function(x) as.numeric(as.character(x)))
+n_zeroes <- rowSums(totu == 0)
+totu <- totu[n_zeroes <= round(ncol(totu) * 0.90),]
+clr <- clr_c(totu)
+clr <- as.data.frame(clr)
+
+# Remove columns with all zeros
+clr <- clr[, colSums(clr) != 0]
+# PCA Analysis
+pca <- prcomp(clr, center = FALSE, scale. = FALSE)
+
+# Extract PCA results
+pca_df <- as.data.frame(pca$x)  # Principal component scores for samples
+pca_df$SampleID <- rownames(pca$x)  # Add sample IDs for reference
+
+metadata$SampleID <- rownames(metadata)
+metadata <- as.data.frame(metadata)
+metadata <- metadata[match(rownames(pca_df), metadata$SampleID), ]
+pca_merged <- cbind(pca_df, metadata)
+pca_merged <- pca_merged[,-39]
+
+# Calculate % variance explained for labels
+variance_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+pc1_label <- paste0("PC1 (", round(variance_explained[1], 2), "%)")
+pc2_label <- paste0("PC2 (", round(variance_explained[2], 2), "%)")
+
+
+r <- ggplot(pca_merged, aes(x = PC1, y = PC2, color = diet)) +
+  geom_point(size = 4) +  # Points for each sample
+  stat_ellipse(aes(group = diet), level = 0.95) +  # Ellipses for 95% confidence
+  theme_minimal() +
+  labs(
+    title = "PCA of CLR-transformed OTU Data (Order)",
+    x = pc1_label,
+    y = pc2_label
+  )
+#permanova
+otu_samples <- rownames(clr)
+metadata_filtered <- metadata[metadata$SampleID %in% otu_samples, ]
+
+#converting phyloseq s4 to df
+metadata_filtered <- data.frame(as(metadata_filtered, "data.frame"))
+metadata_filtered$diet <- factor(as.character(metadata_filtered$diet))
+dist_matrix <- vegdist(clr, method = "euclidean")
+adonis2(dist_matrix ~  diet , data = metadata_filtered)
+adonis2(dist_matrix ~  cage, data = metadata_filtered)
+adonis2(dist_matrix ~  cage+diet, data = metadata_filtered, by = "term")
+betadisper_test <- betadisper(dist_matrix, metadata_filtered$diet)
+anova(betadisper_test)
+plot(betadisper_test)
+##accounting for cage
+# ensure cage and diet exist in sample_data
+sample_data(ps.phylum)$cage <- as.factor(sample_data(ps.phylum)$cage)
+sample_data(ps.phylum)$diet <- as.factor(sample_data(ps.phylum)$diet)
+
+# merge samples by cage (sums counts by default)
+ps_cage <- merge_samples(ps.phylum, "cage")
+# keep diet label per cage (assumes one diet per cage)
+sd <- as.data.frame(sample_data(ps.phylum))
+diet_by_cage <- tapply(sd$diet, sd$cage, function(x) unique(as.character(x))[1])
+sample_data(ps_cage)$diet <- factor(diet_by_cage[rownames(sample_data(ps_cage))])
+
+# extract counts and CLR-transform from scratch at cage level
+otu_cage <- as.data.frame(otu_table(ps_cage))
+clr_cage <- clr_c(otu_cage)
+
+# distance & PERMANOVA (diet test with cages as units)
+dist_cage <- dist(clr_cage, method = "euclidean")
+adonis2(dist_cage ~ diet, data = data.frame(diet = sample_data(ps_cage)$diet))
+
+meta_cage <- data.frame(
+  DietGroup = factor(as.character(sample_data(ps_cage)$diet))
+)
+pairwise_results_cage <- pairwise.adonis(
+  x = as.matrix(dist_cage),
+  factors = meta_cage$DietGroup,
+  sim.method = "euclidean",
+  perm = 999,
+  p.adjust.m = "BH"
+)
+pairwise_results_cage
