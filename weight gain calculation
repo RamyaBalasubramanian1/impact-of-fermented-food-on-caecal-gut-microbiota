@@ -1,0 +1,633 @@
+library(vegan)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(pairwiseAdonis)
+#install.packages("lme4")
+library("devtools"); install_github("lme4/lme4",dependencies=TRUE)
+#install.packages("Matrix")
+library(Matrix)
+#devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+#install.packages("afex")
+library(afex)
+library(emmeans)
+library(purrr)
+################################
+################################
+################################
+getwd()
+setwd("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2")
+weight <- read.csv("raw_data/mice_weights_compiled_WKKOM.csv", stringsAsFactors=T)
+head(weight)
+data <- weight
+#######################################
+weight_long <- weight %>%
+  pivot_longer(
+    cols = starts_with("W"),
+    names_to = "Week",
+    values_to = "Weight"
+  ) %>%
+  mutate(
+    Week_num = readr::parse_number(Week)   
+  )
+individual_weigth_over_weeks <-ggplot(weight_long, aes(x = Week_num, y = Weight, group = Cage.name, color = diet)) +
+  geom_line(alpha = 0.6) +
+  geom_point(size = 1) +
+  scale_x_continuous(breaks = 1:12, labels = paste0("W", 1:12)) +
+  labs(x = "Week", y = "Weight", color = "Diet") +
+  theme_minimal(base_size = 12)
+
+
+############################
+#############################
+weight_long <- weight_long %>%
+  dplyr::filter(!Week %in% paste0("W", 1:4))
+weight_mean <- weight_long %>%
+  dplyr::group_by(diet, Week_num) %>%
+  dplyr::summarise(Weight = mean(Weight, na.rm = TRUE), .groups = "drop")
+mean_weight_over_week <- ggplot(weight_mean, aes(Week_num, Weight, color = diet)) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  scale_x_continuous(breaks = 1:12, labels = paste0("W", 1:12)) +
+  labs(x = "Week since acclimatisation", y = "Weight in grams", color = "Diet") +
+  theme_minimal(base_size = 12)
+##################
+
+###############################
+##############################
+# make week a factor label if you like
+dat <- weight_long %>% dplyr::mutate(Week = factor(Week_num))
+
+# Run ANOVA Weight ~ diet at each week
+per_week_anova <- dat %>%
+  dplyr::group_by(Week_num) %>%
+  dplyr::do(broom::tidy(aov(Weight ~ diet, data = .))) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(term == "diet") %>%
+  dplyr::mutate(p_adj = p.adjust(p.value, method = "holm"))
+
+per_week_anova
+########################################
+
+######################################
+#devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+# Calculate the delta weight gain between weeks
+data$delta_W2<- data$W2 - data$W1
+data$delta_W3 <- data$W3 - data$W2
+data$delta_W4 <- data$W4 - data$W3
+data$delta_W5 <- data$W5 - data$W4
+data$delta_W6 <- data$W6 - data$W5
+data$delta_W7 <- data$W7 - data$W6
+data$delta_W8 <- data$W8 - data$W7
+data$delta_W9 <- data$W9 - data$W8
+data$delta_W10 <- data$W10 - data$W9
+data$delta_W11 <- data$W11 - data$W10
+data$delta_W12 <- data$W12 - data$W11
+########################################
+#plotting weekly weights
+delta_long <- data %>%
+  pivot_longer(
+    cols = matches("^delta_W\\d+$"),
+    names_to = "WeekDelta",
+    values_to = "DeltaWeight"
+  ) %>%
+  mutate(
+    Week_num = readr::parse_number(WeekDelta)   # 2..12
+  )
+delta_individual_weight_gain <- ggplot(delta_long, aes(x = Week_num, y = DeltaWeight, group = Cage.name, color = diet)) +
+  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.4) +
+  geom_line(alpha = 0.6) +
+  geom_point(size = 1) +
+  scale_x_continuous(breaks = 2:12, labels = paste0("ΔW", 2:12)) +
+  labs(x = "Week-to-week interval", y = "Δ Weight (current week − previous)", color = "Diet") +
+  theme_minimal(base_size = 12)
+
+#######
+delta_mean <- delta_long %>%
+  dplyr::group_by(diet, Week_num) %>%
+  dplyr::summarise(DeltaWeight = mean(DeltaWeight, na.rm = TRUE), .groups = "drop")
+delta_mean_weight_gain <- ggplot(delta_mean, aes(Week_num, DeltaWeight, color = diet)) +
+  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.4) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  scale_x_continuous(breaks = 2:12, labels = paste0("ΔW", 2:12)) +
+  labs(x = "Week-to-week interval", y = "Mean Δ Weight", color = "Diet") +
+  theme_minimal(base_size = 12)
+#########################################
+########################################
+# filter
+delta_long_5plus <- delta_long %>% filter(Week_num >= 4)
+delta_mean_5plus <- delta_mean %>% filter(Week_num >= 4)
+trial_phase <- ggplot(delta_mean_5plus, aes(Week_num, DeltaWeight, color = diet)) +
+  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.4) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  scale_x_continuous(breaks = 4:12, labels = paste0("ΔW", 4:12)) +
+  labs(x = "Week-to-week interval", y = "Mean Δ Weight", color = "Diet") +
+  theme_minimal(base_size = 12)
+
+#############################################
+library(dplyr)
+library(tidyr)
+
+delta_long <- data %>%
+  tidyr::pivot_longer(
+    cols = dplyr::matches("^delta_W\\d+$"),
+    names_to = "WeekDelta",
+    values_to = "DeltaWeight"
+  ) %>%
+  dplyr::mutate(Week_num = readr::parse_number(WeekDelta)) %>%
+  dplyr::select(Cage.name, diet, Week_num, DeltaWeight)
+per_week_anova_delta <- delta_long %>%
+  dplyr::group_by(Week_num) %>%
+  dplyr::do(broom::tidy(aov(DeltaWeight ~ diet, data = .))) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(term == "diet") %>%
+  dplyr::mutate(p_adj = p.adjust(p.value, method = "holm"))
+
+per_week_anova_delta
+###############
+###############
+library(emmeans)
+delta_long <- dplyr::filter(delta_long, Week_num >= 5)
+wk10 <- 10  # example week; change as needed
+fit_wk <- aov(DeltaWeight ~ diet, data = dplyr::filter(delta_long, Week_num == wk10))
+wk10 <- emmeans(fit_wk, pairwise ~ diet, adjust = "tukey")$contrasts
+###############
+wk5 <- 5  # example week; change as needed
+fit_wk <- aov(DeltaWeight ~ diet, data = dplyr::filter(delta_long, Week_num == wk5))
+wk5 <- emmeans(fit_wk, pairwise ~ diet)$contrasts
+wk6 <- 6  # example week; change as needed
+fit_wk <- aov(DeltaWeight ~ diet, data = dplyr::filter(delta_long, Week_num == wk6))
+wk6<- emmeans(fit_wk, pairwise ~ diet)$contrasts
+#############################
+#plotting weight gain
+#https://www.thelancet.com/journals/ebiom/article/PIIS2352-3964(21)00100-6/fulltext#fig0001
+# 1) Weekly % change: %Δ_k = 100 * (Wk / W(k-1) - 1)
+pct_long <- weight_long %>%
+  dplyr::arrange(Cage.name, Week_num) %>%
+  dplyr::group_by(Cage.name) %>%
+  dplyr::mutate(
+    pct_delta = 100 * (Weight / dplyr::lag(Weight) - 1)
+  ) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(Week_num >= 5)
+
+# 2) Mean ± SD per diet × week
+pct_summary <- pct_long %>%
+  dplyr::reframe(
+    mean_pct = mean(pct_delta, na.rm = TRUE),
+    sd_pct   = sd(pct_delta,   na.rm = TRUE),
+    .by = c(diet, Week_num)
+  ) %>%
+  dplyr::mutate(
+    ymin = mean_pct - sd_pct,
+    ymax = mean_pct + sd_pct
+  )
+
+# 3) Plot: mean line + points, shaded SD ribbon
+ggplot(pct_summary, aes(Week_num, mean_pct, color = diet, fill = diet)) +
+  geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.15, color = NA) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.4) +
+  scale_x_continuous(breaks = 5:12, labels = paste0("W", 5:12)) +
+  labs(
+    x = "Week",
+    y = "% weight change from prior week (mean ± SD)",
+    color = "Diet", fill = "Diet",
+    title = "Weekly % weight gain by diet (W6–W12)"
+  ) +
+  theme_minimal(base_size = 12)
+###############################
+###############################
+###############################
+#overall weight gain profile
+gain_12_5 <- weight_long %>%
+  dplyr::filter(Week_num %in% c(5, 12)) %>%
+  dplyr::select(Cage.name, diet, Week, Weight) %>%
+  tidyr::pivot_wider(names_from = Week, values_from = Weight) %>%
+  dplyr::mutate(
+    gain = W12 - W5
+  ) %>%
+  dplyr::filter(!is.na(gain)) 
+ggplot(gain_12_5, aes(x = diet, y = gain)) +
+  geom_boxplot(aes(fill = diet),
+               alpha = 0.25, width = 0.6, outlier.shape = NA) +
+  geom_jitter(aes(color = diet),
+              width = 0.15, size = 2, alpha = 0.8) +
+  stat_summary(fun = mean, aes(color = diet),
+               geom = "point", shape = 18, size = 3) +
+  labs(x = "Diet", y = "Overall Weight gain ") +
+  guides(fill = "none") +                # keep one legend
+  theme_minimal(base_size = 12)
+fit_gain <- aov(gain ~ diet, data = gain_12_5)
+summary(fit_gain)
+res <- residuals(fit_gain)
+shapiro.test(res)#normal
+#############################################
+#plot from kanishka study
+#############################################
+getwd()
+setwd("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2")
+weight <- read.csv("raw_data/mice_weights_compiled_WKKOM.csv", stringsAsFactors=T)
+head(weight)
+data <- weight
+data <- data[,-c(2,3,4)]
+# Long data with delta vs W1 per animal
+delta_long <- data %>%
+  pivot_longer(cols = matches("^W\\d+$"),
+               names_to = "week", values_to = "weight") %>%
+  group_by(Cage.name) %>%
+  mutate(delta = weight - weight[week == "W4"]) %>%  # always subtract W1
+  ungroup() %>%
+  mutate(week_num = as.integer(sub("^W", "", week)),
+         weeks_since_baseline = week_num - 1)
+
+# Mean Δ per diet per week (this is the “one line per diet” data)
+mean_diet_week <- delta_long %>%
+  group_by(diet, weeks_since_baseline) %>%
+  summarise(mean_delta = mean(delta, na.rm = TRUE), .groups = "drop")
+
+# Plot: one line per diet
+delta_weight_beverage <- ggplot(mean_diet_week,
+       aes(x = weeks_since_baseline, y = mean_delta, color = diet)) +
+  geom_line(size = 1.1) +
+  geom_point(size = 1.6) +
+  labs(x = "Weeks since diet switch",
+       y = expression( "delta weight gain"),
+       color = "Diet") +
+  theme_minimal()
+######################################
+week_cols <- grep("^W\\d+$", names(data), value = TRUE)
+week_nums <- as.integer(sub("^W", "", week_cols))
+baseline_week <- if ("W4" %in% week_cols) "W4" else paste0("W", min(week_nums))
+baseline_num  <- as.integer(sub("^W", "", baseline_week))
+
+# --- 2) Long data + Δ vs baseline (per animal) ---
+delta_long <- data %>%
+  pivot_longer(all_of(week_cols), names_to = "week", values_to = "weight") %>%
+  mutate(week_num = as.integer(sub("^W","", week))) %>%
+  group_by(Cage.name) %>%
+  mutate(delta = weight - weight[week == baseline_week]) %>%  # ALWAYS vs baseline
+  ungroup() %>%
+  mutate(weeks_since_baseline = week_num - baseline_num)
+
+# --- 3) One-way ANOVA (per week) on Δ ~ diet ---
+anova_by_week <- delta_long %>%
+  filter(weeks_since_baseline > 0) %>%             # test weeks after baseline only
+  group_split(weeks_since_baseline) %>%
+  map_df(~{
+    wk <- unique(.x$weeks_since_baseline)
+    fit <- aov(delta ~ diet, data = .x)
+    broom::tidy(fit) %>%
+      filter(term == "diet") %>%
+      transmute(
+        week_since_baseline = wk,
+        df1 = df,
+        df2 = fit$df.residual,
+        F = statistic,
+        p_value = p.value
+      )
+  }) %>%
+  arrange(week_since_baseline) %>%
+  mutate(
+    p_adj_BH  = p.adjust(p_value, method = "BH"),
+    p_adj_Bonf = p.adjust(p_value, method = "bonferroni")
+  )
+
+anova_by_week
+sig_weeks <- anova_by_week %>% filter(p_adj_BH < 0.05) %>% pull(week_since_baseline)
+
+tukey_by_week <- map_df(sig_weeks, ~{
+  df_wk <- filter(delta_long, weeks_since_baseline == .x)
+  fit <- aov(delta ~ diet, data = df_wk)
+  broom::tidy(TukeyHSD(fit, "diet")) %>%
+    mutate(week_since_baseline = .x) %>%
+    relocate(week_since_baseline, .before = 1)
+})
+
+tukey_by_week
+###############
+mod <- lmer(
+  Weight ~ Week_num * diet +
+    (1|Cage.name) +
+    (1|Cage),
+  data = weight_long
+)
+anova(mod)
+
+######################################
+######################################
+##doing the same for sauerkraut and cabbage
+######################################
+weight <- read.csv("raw_data/mice_weights_compiled_Saukim.csv", stringsAsFactors=T)
+head(weight)
+data <- weight
+#kanishka study
+data <- data[,-c(2,3,4)]
+# Long data with delta vs W1 per animal
+delta_long <- data %>%
+  pivot_longer(cols = matches("^W\\d+$"),
+               names_to = "week", values_to = "weight") %>%
+  group_by(Cage) %>%
+  mutate(delta = weight - weight[week == "W4"]) %>%  # always subtract W1
+  ungroup() %>%
+  mutate(week_num = as.integer(sub("^W", "", week)),
+         weeks_since_baseline = week_num - 1)
+
+# Mean Δ per diet per week (this is the “one line per diet” data)
+mean_diet_week <- delta_long %>%
+  group_by(diet, weeks_since_baseline) %>%
+  summarise(mean_delta = mean(delta, na.rm = TRUE), .groups = "drop")
+
+# Plot: one line per diet
+delta_weight_food <- ggplot(mean_diet_week,
+                                aes(x = weeks_since_baseline, y = mean_delta, color = diet)) +
+  geom_line(size = 1.1) +
+  geom_point(size = 1.6) +
+  labs(x = "Weeks since accimatisation",
+       y = "delta weight",
+       color = "Diet") +
+  theme_minimal()
+######################################
+week_cols <- grep("^W\\d+$", names(data), value = TRUE)
+week_nums <- as.integer(sub("^W", "", week_cols))
+baseline_week <- if ("W4" %in% week_cols) "W4" else paste0("W", min(week_nums))
+baseline_num  <- as.integer(sub("^W", "", baseline_week))
+
+# --- 2) Long data + Δ vs baseline (per animal) ---
+delta_long <- data %>%
+  pivot_longer(all_of(week_cols), names_to = "week", values_to = "weight") %>%
+  mutate(week_num = as.integer(sub("^W","", week))) %>%
+  group_by(Cage) %>%
+  mutate(delta = weight - weight[week == baseline_week]) %>%  # ALWAYS vs baseline
+  ungroup() %>%
+  mutate(weeks_since_baseline = week_num - baseline_num)
+
+# --- 3) One-way ANOVA (per week) on Δ ~ diet ---
+anova_by_week <- delta_long %>%
+  filter(weeks_since_baseline > 0) %>%             # test weeks after baseline only
+  group_split(weeks_since_baseline) %>%
+  map_df(~{
+    wk <- unique(.x$weeks_since_baseline)
+    fit <- aov(delta ~ diet, data = .x)
+    broom::tidy(fit) %>%
+      filter(term == "diet") %>%
+      transmute(
+        week_since_baseline = wk,
+        df1 = df,
+        df2 = fit$df.residual,
+        F = statistic,
+        p_value = p.value
+      )
+  }) %>%
+  arrange(week_since_baseline) %>%
+  mutate(
+    p_adj_BH  = p.adjust(p_value, method = "BH"),
+    p_adj_Bonf = p.adjust(p_value, method = "bonferroni")
+  )
+
+anova_by_week
+
+#####################################
+#####################################
+weight_long <- weight %>%
+  pivot_longer(
+    cols = starts_with("W"),
+    names_to = "Week",
+    values_to = "Weight"
+  ) %>%
+  mutate(
+    Week_num = readr::parse_number(Week)   
+  )
+individual_weigth_over_weeks <-ggplot(weight_long, aes(x = Week_num, y = Weight, group = Cage, color = diet)) +
+  geom_line(alpha = 0.6) +
+  geom_point(size = 1) +
+  scale_x_continuous(breaks = 1:12, labels = paste0("W", 1:12)) +
+  labs(x = "Week", y = "Weight", color = "Diet") +
+  theme_minimal(base_size = 12)
+############################
+#############################
+weight_mean <- weight_long %>%
+  dplyr::group_by(diet, Week_num) %>%
+  dplyr::summarise(Weight = mean(Weight, na.rm = TRUE), .groups = "drop")
+
+mean_weight_over_week <- ggplot(weight_mean, aes(Week_num, Weight, color = diet)) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  scale_x_continuous(breaks = 1:12, labels = paste0("W", 1:12)) +
+  labs(x = "Week", y = "Mean weight", color = "Diet") +
+  theme_minimal(base_size = 12)
+
+######################################
+#devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+# Calculate the delta weight gain between weeks
+data$delta_W2<- data$W2 - data$W1
+data$delta_W3 <- data$W3 - data$W2
+data$delta_W4 <- data$W4 - data$W3
+data$delta_W5 <- data$W5 - data$W4
+data$delta_W6 <- data$W6 - data$W5
+data$delta_W7 <- data$W7 - data$W6
+data$delta_W8 <- data$W8 - data$W7
+data$delta_W9 <- data$W9 - data$W8
+data$delta_W10 <- data$W10 - data$W9
+data$delta_W11 <- data$W11 - data$W10
+data$delta_W12 <- data$W12 - data$W11
+data$delta_W13 <- data$W13 - data$W12
+########################################
+#plotting weekly weights
+delta_long <- data %>%
+  pivot_longer(
+    cols = matches("^delta_W\\d+$"),
+    names_to = "WeekDelta",
+    values_to = "DeltaWeight"
+  ) %>%
+  mutate(
+    Week_num = readr::parse_number(WeekDelta)   # 2..12
+  )
+delta_individual_weight_gain <- ggplot(delta_long, aes(x = Week_num, y = DeltaWeight, group = Cage, color = diet)) +
+  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.4) +
+  geom_line(alpha = 0.6) +
+  geom_point(size = 1) +
+  scale_x_continuous(breaks = 2:12, labels = paste0("ΔW", 2:12)) +
+  labs(x = "Week-to-week interval", y = "Δ Weight (current week − previous)", color = "Diet") +
+  theme_minimal(base_size = 12)
+
+#######
+delta_mean <- delta_long %>%
+  dplyr::group_by(diet, Week_num) %>%
+  dplyr::summarise(DeltaWeight = mean(DeltaWeight, na.rm = TRUE), .groups = "drop")
+delta_mean_weight_gain <- ggplot(delta_mean, aes(Week_num, DeltaWeight, color = diet)) +
+  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.4) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  scale_x_continuous(breaks = 2:12, labels = paste0("ΔW", 2:12)) +
+  labs(x = "Week-to-week interval", y = "Mean Δ Weight", color = "Diet") +
+  theme_minimal(base_size = 12)
+#########################################
+########################################
+# filter
+delta_long_5plus <- delta_long %>% filter(Week_num >= 5)
+delta_mean_5plus <- delta_mean %>% filter(Week_num >= 5)
+trial_phase <- ggplot(delta_mean_5plus, aes(Week_num, DeltaWeight, color = diet)) +
+  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.4) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  scale_x_continuous(breaks = 5:12, labels = paste0("ΔW", 5:12)) +
+  labs(x = "Week-to-week interval", y = "Mean Δ Weight", color = "Diet") +
+  theme_minimal(base_size = 12)
+
+#############################################
+library(dplyr)
+library(tidyr)
+
+delta_long <- data %>%
+  tidyr::pivot_longer(
+    cols = dplyr::matches("^delta_W\\d+$"),
+    names_to = "WeekDelta",
+    values_to = "DeltaWeight"
+  ) %>%
+  dplyr::mutate(Week_num = readr::parse_number(WeekDelta)) %>%
+  dplyr::select(Cage, diet, Week_num, DeltaWeight)
+per_week_anova_delta <- delta_long %>%
+  dplyr::group_by(Week_num) %>%
+  dplyr::do(broom::tidy(aov(DeltaWeight ~ diet, data = .))) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(term == "diet") %>%
+  dplyr::mutate(p_adj = p.adjust(p.value, method = "holm"))
+
+per_week_anova_delta
+####################
+####################
+# 1) Per-cage gain: W12 − W5
+gain_12_5 <- weight_long %>%
+  dplyr::filter(Week_num %in% c(5, 12)) %>%
+  dplyr::select(Cage_id, diet, Week_num, Weight) %>%
+  tidyr::pivot_wider(names_from = Week_num, values_from = Weight, names_prefix = "W") %>%
+  dplyr::mutate(gain = W12 - W5) %>%
+  tidyr::drop_na(gain)   # keep cages that have both W5 and W12
+
+# 2) Plot: boxplot + jitter, colored by diet
+ggplot(gain_12_5, aes(x = diet, y = gain)) +
+  geom_boxplot(aes(fill = diet),
+               alpha = 0.25, width = 0.6, outlier.shape = NA) +
+  geom_jitter(aes(color = diet),
+              width = 0.15, size = 2, alpha = 0.8) +
+  stat_summary(fun = mean, aes(color = diet),
+               geom = "point", shape = 18, size = 3) +
+  labs(x = "Diet", y = "Overall Weight gain ") +
+  guides(fill = "none") +
+  theme_minimal(base_size = 12)
+fit_gain <- aov(gain ~ diet, data = gain_12_5)
+summary(fit_gain)
+res <- residuals(fit_gain)
+shapiro.test(res)#normal
+weight_long <- weight_long %>%
+  dplyr::filter(!Week %in% paste0("W", 1:4))
+mod <- lmer(
+  Weight ~ Week_num * diet +
+    (1|Cage_id) +
+    (1|Cage),
+  data = weight_long
+)
+anova(mod)
+tr <- emtrends(mod, ~ diet, var = "Week_num")
+
+pairs(tr, adjust = "BH")
+
+
+# data$baseline <- rowMeans(data[, c("delta_W2", "delta_W3", "delta_W4")])
+# 
+# weeks <- paste0("delta_W", 5:11)
+# for (i in seq_along(weeks)) {
+#   cum_col <- paste0("cum_", weeks[i])
+#   if (i == 1) {
+#     data[[cum_col]] <- data$baseline + data[[weeks[i]]]
+#   } else {
+#     data[[cum_col]] <- data$baseline + rowSums(data[, weeks[1:i]])
+#   }
+# }
+# 
+# data_long <- data %>%
+#   select(diet,Cage_id, starts_with("cum_delta_W")) %>%
+#   pivot_longer(cols = starts_with("cum_delta_W"),
+#                names_to = "Week",
+#                values_to = "CumulativeDelta") %>%
+#   mutate(Week = factor(gsub("cum_delta_W", "W", Week), levels = paste0("W", 5:11)))
+# 
+# diet_means <- data_long %>%
+#   group_by(diet, Week) %>%
+#   summarise(mean_delta = mean(CumulativeDelta), .groups = "drop")
+# 
+# ######################
+# 
+# ggplot(diet_means, aes(x = Week, y = mean_delta, color = diet, group = diet)) +
+#   geom_line(size = 1.2) +
+#   geom_point(size = 2) +
+#   labs(title = "Mean Cumulative Weight Gain per Diet (Baseline: Mean of delta_W2 & W3)",
+#        x = "Week", y = "Mean Cumulative Weight Gain") +
+#   theme_minimal()
+# ###################################################
+# 
+# 
+# # Fit repeated-measures ANOVA with proper within-subject structure
+# aov_model <- aov_car(CumulativeDelta ~ diet * Week + Error(Cage_id/Week), data = data_long, factorize = FALSE)
+# 
+# # Pairwise comparisons between diets at each timepoint (Bonferroni adjusted)
+# emmeans(aov_model, pairwise ~ diet | Week, adjust = "bonferroni")
+# ###############################
+# # Get post hoc comparisons
+# contrast_df <- as.data.frame(
+#   emmeans(aov_model, pairwise ~ diet | Week, adjust = "bonferroni")$contrasts
+# )
+# contrast_sig <- contrast_df %>%
+#   filter(p.value < 0.05) %>%
+#   mutate(
+#     symbol = case_when(
+#       contrast == "fig - Teklad" ~ "*",
+#       contrast == "tea - Teklad" ~ "#",
+#       contrast == "kombucha - Teklad" ~ "^",
+#       contrast == "water kefir - Teklad" ~ "~",
+#       TRUE ~ "†"
+#     )
+#   )
+# #############
+# diet_means$Week <- as.factor(diet_means$Week)
+# contrast_pos <- contrast_sig %>%
+#   separate(contrast, into = c("diet1", "diet2"), sep = " - ") %>%
+#   left_join(diet_means, by = c("diet1" = "diet", "Week" = "Week")) %>%
+#   rename(y1 = mean_delta) %>%
+#   left_join(diet_means, by = c("diet2" = "diet", "Week" = "Week")) %>%
+#   rename(y2 = mean_delta) %>%
+#   mutate(y_mid = (y1 + y2) / 2)
+# contrast_pos <- contrast_pos %>%
+#   group_by(Week) %>%
+#   mutate(y_offset = row_number() * 0.5) %>%  # Adjust 0.5 for more/less spacing
+#   ungroup() %>%
+#   mutate(y_final = y_mid + y_offset)
+# x <- ggplot(diet_means, aes(x = Week, y = mean_delta, color = diet, group = diet)) +
+#   geom_line(size = 1.2) +
+#   geom_point(size = 2) +
+#   labs(
+#     title = "Mean Cumulative Weight Gain per Diet",
+#     subtitle = "Bonferroni-adjusted p values",
+#     x = "Week", y = "Cumulative Weight Gain"
+#   ) + theme(
+#     axis.title.x = element_text(face = "bold"),
+#     axis.title.y = element_text(face = "bold")
+#   )+
+#   theme_minimal() +
+#   geom_text(
+#     data = contrast_pos,
+#     aes(x = Week, y = y_final, label = symbol),
+#     inherit.aes = FALSE,
+#     size = 5,
+#     color = "black"
+#   )
+# ggsave(
+#   filename = "C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/Figures/weekly_weight_gain_kim_sau.svg",
+#   plot = x,
+#   width = 10, height = 6  # You can adjust size as needed
+# )
+# ######################################################################################
