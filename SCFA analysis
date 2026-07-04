@@ -1,0 +1,481 @@
+
+
+####################################
+####################################
+library("ggplot2")
+# Load the required packages
+library(dplyr)
+library(ggplot2)
+library(multcomp)  # For post-hoc tests
+library(car)       # For ANOVA
+library(broom)     # For tidy function
+library(stats)
+library(dplyr)
+library(rstatix)
+
+#################################################################################
+#################################################################################
+#################################################################################
+all_scfa <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/SCFA results kimsau.csv")
+meta <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/meta_kimsau.csv")
+sc <- meta %>% filter(grepl("SC", Diet))
+meta <- meta %>% filter(!grepl("SC", Diet))
+meta <- meta[-c(43:48),]
+########
+
+sc_data <- all_scfa %>%
+  filter(all_scfa$Sample_ID %in% sc$sample_id)
+all_scfa_filtered <- all_scfa %>%
+  filter(!all_scfa$Sample_ID %in% sc$sample_id)
+all_scfa_filtered <- all_scfa_filtered[-c(43,44),]
+#################
+#################
+#################
+scfa_w_diet <- all_scfa_filtered %>%
+  inner_join(meta %>% dplyr::select(sample_id, Diet),
+             by = c("Sample_ID" = "sample_id"))
+# 2) Long format: one row per sample-feature
+feature_cols <- setdiff(names(all_scfa_filtered), "Sample_ID")
+scfa_long <- scfa_w_diet %>%
+  pivot_longer(
+    cols = all_of(feature_cols),
+    names_to = "Feature",
+    values_to = "Concentration"
+  )
+
+r <- ggplot(scfa_long, aes(x = Diet, y = Concentration, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(
+    shape = 21,            # filled circle with border
+    color = "black",       # outline color
+    width = 0.15,
+    alpha = 0.7,
+    size = 2
+  ) +
+  facet_wrap(~ Feature, scales = "free_y") +
+  labs(x = "Diet", y = "Concentration", title = "SCFA/BCFA by Diet") +
+  theme_bw() +
+  theme(
+    strip.background = element_rect(fill = "grey90"),
+    axis.text.x = element_blank(), axis.ticks.x=element_blank()
+  )
+####################
+keep_features <- c(
+  "acetate", "BCFA", "butyrate",
+  "isobutyrate", "isovalerate",
+  "propionate", "SCFA", "valerate"
+)
+
+# subset
+scfa_sub <- scfa_long %>%
+  filter(Feature %in% keep_features)
+outlier_results <- scfa_sub %>%
+  group_by(Feature, Diet) %>%
+  identify_outliers(Concentration)
+outlier_results
+# # run Kruskal-Wallis for each feature
+# kw_results <- scfa_sub %>%
+#   group_by(Feature) %>%
+#   kruskal_test(Concentration ~ Diet)
+# 
+# kw_results
+# ########
+# iso_data <- scfa_long %>%
+#   filter(Feature == "isovalerate")
+# dunn_iso <- iso_data %>%
+#   dunn_test(Concentration ~ Diet, p.adjust.method = "BH")
+# ##plotting only significant
+# # keep only significant comparisons
+# sig_dunn <- dunn_iso %>%
+#   filter(p.adj < 0.05) %>%
+#   mutate(y.position = max(iso_data$Concentration) * 1.1,   # adjust height
+#          group1 = as.character(group1),
+#          group2 = as.character(group2))
+# 
+# # plot with annotation
+# ggplot(iso_data, aes(x = Diet, y = Concentration, fill = Diet)) +
+#   geom_boxplot(outlier.shape = NA) +
+#   geom_jitter(shape = 21, color = "black", width = 0.15, alpha = 0.7, size = 2) +
+#   stat_pvalue_manual(sig_dunn, label = "p.adj", tip.length = 0.02) +
+#   labs(title = "Isovalerate by Diet", y = "Isovalerate concentration") +
+#   theme_bw()
+###############################
+###############################
+#plotting with outlier analysis
+# features of interest
+keep_features <- c("acetate", "BCFA", "butyrate",
+                   "isobutyrate", "isovalerate",
+                   "propionate", "SCFA", "valerate")
+
+scfa_sub <- scfa_long %>%
+  filter(Feature %in% keep_features)
+
+# 1) Identify outliers
+outliers <- scfa_sub %>%
+  group_by(Feature, Diet) %>%
+  identify_outliers(Concentration)
+
+# 2) Remove outliers (keep only rows not marked as outliers)
+scfa_no_outliers <- scfa_sub %>%
+  anti_join(outliers %>% filter(is.outlier), 
+            by = c("Sample_ID", "Feature", "Diet", "Concentration"))
+
+#but data is not normally dist
+# Run Shapiro-Wilk test on residuals for each Feature
+shapiro_results <- scfa_no_outliers %>%
+  group_by(Feature) %>%
+  do({
+    # linear model: Concentration ~ Diet
+    model <- lm(Concentration ~ Diet, data = .)
+    res   <- residuals(model)
+    tibble(
+      statistic = shapiro.test(res)$statistic,
+      p.value   = shapiro.test(res)$p.value
+    )
+  })
+
+shapiro_results
+##################
+#shapiro test indicates the data is normally distributed so we use ANOVA
+###################
+###################
+anova_results_raw <- scfa_no_outliers %>%
+  group_by(Feature) %>%
+  anova_test(Concentration ~ Diet)
+anova_results <- get_anova_table(anova_results_raw) %>%  # <- not in a pipe
+  as_tibble() %>%                                       # <- drop special class
+  filter(Effect == "Diet") %>%
+  mutate(
+    p.adj  = p.adjust(p, method = "BH"),
+    signif = ifelse(p.adj < 0.05, "*", "ns")
+  )
+sig_features <- anova_results %>%
+  filter(p.adj < 0.05) %>%
+  pull(Feature) %>%
+  unique()
+sig_features
+tukey_results <- scfa_no_outliers %>%
+  filter(Feature %in% sig_features) %>%
+  group_by(Feature) %>%
+  tukey_hsd(Concentration ~ Diet)
+tukey_results
+sig_features <- tukey_results %>%
+  filter(p.adj < 0.05)
+
+sig_features
+
+##########################
+#########################
+ann_df <- sig_features[, c("Feature","group1","group2","p.adj","p.adj.signif")] %>%
+  dplyr::left_join(
+    scfa_no_outliers %>%
+      dplyr::group_by(Feature) %>%
+      dplyr::summarise(ymax = max(Concentration, na.rm = TRUE), .groups = "drop"),
+    by = "Feature"
+  ) %>%
+  dplyr::group_by(Feature) %>%
+  dplyr::arrange(Feature, group1, group2, .by_group = TRUE) %>%
+  dplyr::mutate(
+    y.position = ymax * 1.10 + (dplyr::row_number() - 1) * (0.08 * ymax)
+  ) %>%
+  dplyr::ungroup()
+p <- ggplot(scfa_no_outliers, aes(x = Diet, y = Concentration, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(shape = 21, color = "black", width = 0.15, alpha = 0.7, size = 2) +
+  facet_wrap(~ Feature, scales = "free_y") +
+  stat_pvalue_manual(
+    ann_df,
+    label = "p.adj.signif",   # use "p.adj" for numeric p-values
+    tip.length = 0.01,
+    bracket.size = 0.3
+  ) +
+  labs(x = "Diet", y = "Concentration",
+       title = "SCFA/BCFA by Diet (outliers removed) with Tukey significant pairs") +
+  theme_bw() +
+  theme(
+    strip.background = element_rect(fill = "grey90"),
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "right"
+  )
+
+####################
+####################
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/scfa_without_outlier_pairwise.svg", plot = p, width = 6, height = 8, units = "in")
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/scfa_with_outlier_global.svg", plot = r, width = 6, height = 8, units = "in")
+###############
+###############
+###############
+#permanova testing
+###############
+library(dplyr)
+library(tibble)
+library(vegan)
+
+# 1) Put Sample_ID into row names and drop the column
+scfa_mat <- all_scfa_filtered %>%
+  column_to_rownames("Sample_ID") %>%
+  as.matrix()
+
+# (optional) ensure unique rownames
+# rownames(scfa_mat) <- make.unique(rownames(scfa_mat))
+
+# 2) Bray–Curtis distance (requires numeric, non-negative)
+dist_scfa <- vegdist(scfa_mat, method = "bray")
+
+# 3) Align meta and run PERMANOVA: SCFA composition ~ Diet
+meta2 <- meta %>%
+  mutate(sample_id = as.character(sample_id)) %>%
+  filter(sample_id %in% rownames(scfa_mat)) %>%
+  arrange(match(sample_id, rownames(scfa_mat)))
+
+adonis_res <- adonis2(dist_scfa ~ Cage, data = meta2)
+adonis_res
+########
+#cage aggregation check
+
+meta_3 <- meta2 %>%
+  mutate(
+    Cage_raw  = as.character(Cage),
+    Cage_norm = str_to_lower(str_trim(Cage_raw))
+  ) %>%
+  mutate(
+    Cage_collapsed = if_else(
+      str_detect(Cage_norm, "^[0-9]+[a-z][0-9]$"),
+      str_replace(Cage_norm, "^([0-9]+[a-z])[0-9]$", "\\1"),
+      Cage_norm
+    )
+  )
+adonis_res <- adonis2(dist_scfa ~ Diet +Cage_collapsed, data = meta_3, by = "term")
+adonis_res
+bd_diet <- betadisper(dist_scfa, meta_3$Diet)
+anova(bd_diet) 
+###################
+####################
+###################
+#################
+#################
+#######################
+############
+############
+all_scfa <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/SCFA results kimsau.csv")
+meta <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/meta_kimsau.csv")
+sc <- meta %>% filter(grepl("SC", Diet))
+meta <- meta %>% filter(!grepl("SC", Diet))
+meta <- meta[-c(43:48),]
+sc_data <- all_scfa %>%
+  filter(all_scfa$Sample_ID %in% sc$sample_id)
+sc_long <- sc_data %>%
+  pivot_longer(
+    cols = -Sample_ID,              # all columns except Sample_ID
+    names_to = "Feature",
+    values_to = "Concentration"
+  ) %>%
+  mutate(
+    Diet = "standard chow"          # add diet column for all rows
+  ) 
+setwd("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/SCFA/")
+wk_scfa <- read.csv("C:/Users/ramya.Balasubramania/Desktop/animal_studies/mice_teagasc/pilot study kombu and kef/SCFA/final_clean_scfa.csv")
+str(wk_scfa)
+colnames(wk_scfa) <- c("Sample_ID", "Concentration", "Feature", "Diet")
+sc_data <- sc_data %>% mutate(Sample_ID = sub("^S", "s", Sample_ID))
+##################
+
+all <- rbind(sc_long, wk_scfa)
+###########
+###########
+library(dplyr)
+library(ggplot2)
+
+# (optional) keep only SCFA/BCFA features of interest
+keep_features <- c("acetate","propionate","butyrate",
+                   "isobutyrate","isovalerate","valerate",
+                   "BCFA","SCFA")
+
+all_plot <- all %>%
+  filter(!is.na(Concentration),
+         Feature %in% keep_features)
+all_plot <- all %>%
+  filter(!Feature %in% c("BCFA", "isobutyrate", "SCFA", "valerate"))
+m <-ggplot(all_plot, aes(x = Diet, y = Concentration, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(shape = 21, color = "black", width = 0.15, alpha = 0.7, size = 2) +
+  facet_wrap(~ Feature, scales = "free_y") +
+  labs(
+    title = "SCFA by Diet (outliers notremoved)",
+    x = "Diet", y = "Concentration"
+  ) +
+  theme_bw() +
+  theme(
+    strip.background = element_rect(fill = "grey90"),
+    axis.text.x  = element_blank(),   # hide labels
+    axis.ticks.x = element_blank(),   # optional: hide ticks too
+    legend.position = "right"         # keep legend
+  )
+
+library(dplyr)
+library(rstatix)
+
+# 1) Keep only the features you care about
+keep_features <- c("acetate", "propionate", "butyrate", "isovalerate")
+
+all_sub <- all %>%
+  filter(Feature %in% keep_features)
+
+# 2) Identify outliers (1.5×IQR rule)
+outliers <- all_sub %>%
+  group_by(Feature, Diet) %>%
+  identify_outliers(Concentration)
+
+# 3) Remove outliers
+all_no_outliers <- all_sub %>%
+  anti_join(outliers %>% filter(is.outlier),
+            by = c("Sample_ID", "Feature", "Diet", "Concentration"))
+
+shapiro_results <- all_no_outliers %>%
+  group_by(Feature) %>%
+  do({
+    # linear model: Concentration ~ Diet
+    model <- lm(Concentration ~ Diet, data = .)
+    res   <- residuals(model)
+    tibble(
+      statistic = shapiro.test(res)$statistic,
+      p.value   = shapiro.test(res)$p.value
+    )
+  })
+
+shapiro_results
+####################
+
+df_kw  <- all_no_outliers %>% filter(Feature == "butyrate")
+df_aov <- all_no_outliers %>% filter(Feature != "butyrate")
+
+kw_res <- df_kw %>%
+  group_by(Feature) %>%
+  kruskal_test(Concentration ~ Diet)
+
+dunn_but <- df_kw %>%
+  dunn_test(Concentration ~ Diet, p.adjust.method = "BH")
+########################
+#######################
+anova_results_raw <- df_aov %>%
+  group_by(Feature) %>%
+  anova_test(Concentration ~ Diet)
+anova_results <- get_anova_table(anova_results_raw) %>%  
+  as_tibble() %>%                                       
+  filter(Effect == "Diet") %>%
+  mutate(
+    p.adj  = p.adjust(p, method = "BH"),
+    signif = ifelse(p.adj < 0.05, "*", "ns")
+  )
+##############################
+##use the following for overall effect of diet on individual features
+all_res <- bind_rows(kw_res, anova_results) %>%
+  mutate(
+    p.adj  = p.adjust(p, method = "BH"),
+    signif = ifelse(p.adj < 0.05, "*", "ns")
+  )
+
+all_res
+##############################
+sig_features <- anova_results %>%
+  filter(p.adj < 0.05) %>%
+  pull(Feature) %>%
+  unique()
+sig_features
+tukey_results <- df_aov %>%
+  filter(Feature %in% sig_features) %>%
+  group_by(Feature) %>%
+  tukey_hsd(Concentration ~ Diet)
+tukey_results
+sig_features <- tukey_results %>%
+  filter(p.adj < 0.05)
+sig_features
+##########################
+##########################
+
+
+# 1) Format Dunn’s test results (butyrate only)
+ann_dunn <- dunn_but %>%
+  filter(p.adj < 0.05) %>%             # keep significant only
+  transmute(
+    Feature   = "butyrate",
+    group1    = group1,
+    group2    = group2,
+    p.adj     = p.adj,
+    p.adj.signif = p.adj.signif
+  )
+
+# 2) Format Tukey results (already in sig_features)
+ann_tukey <- sig_features %>%
+  transmute(
+    Feature,
+    group1,
+    group2,
+    p.adj,
+    p.adj.signif
+  )
+##############
+##############
+ymax_tbl <- all_no_outliers %>%
+  as.data.frame() %>%
+  dplyr::mutate(Feature = as.character(Feature)) %>%
+  dplyr::group_by(Feature) %>%
+  dplyr::summarise(ymax = max(Concentration, na.rm = TRUE), .groups = "drop")
+
+ann_df <- bind_rows(ann_dunn, ann_tukey) %>%
+  dplyr::mutate(Feature = as.character(Feature)) %>%
+  dplyr::left_join(ymax_tbl, by = "Feature") %>%
+  dplyr::group_by(Feature) %>%
+  dplyr::arrange(group1, group2, .by_group = TRUE) %>%
+  dplyr::mutate(
+    y.position = ymax * 1.10 + (dplyr::row_number() - 1) * (0.08 * ymax)
+  ) %>%
+  dplyr::ungroup()
+q <- ggplot(all_no_outliers, aes(x = Diet, y = Concentration, fill = Diet)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(
+    shape = 21, color = "black",
+    width = 0.15, alpha = 0.7, size = 2
+  ) +
+  facet_wrap(~ Feature, scales = "free_y") +
+  # add significance brackets
+  stat_pvalue_manual(
+    ann_df,
+    label = "p.adj.signif",   # use "p.adj" to print numeric p-values instead
+    tip.length = 0.01,
+    bracket.size = 0.3
+  ) +
+  labs(
+    x = "Diet",
+    y = "Concentration",
+    title = "SCFA/BCFA by Diet (outliers removed, significant pairwise tests)"
+  ) +
+  theme_bw() +
+  theme(
+    strip.background = element_rect(fill = "grey90"),
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "right"
+  )
+ggsave("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/Figures/scfa_without_outlier_pairwise_wkkom.svg", plot = q, width = 6, height = 8, units = "in")
+#################################################
+#################################################
+#################################################
+wk_wide <- all %>%
+  dplyr::select(Sample_ID, Feature, Concentration) %>%
+  tidyr::pivot_wider(
+    names_from = Feature,
+    values_from = Concentration,
+    values_fn = mean   # if duplicates exist, take mean
+  )
+meta_all <- all %>%
+  dplyr::distinct(Sample_ID, Diet)
+scfa_mat <- wk_wide %>%
+  column_to_rownames("Sample_ID") %>%
+  as.matrix()
+scfa_mat <- scfa_mat[,-c(4,6,7,8)]
+###########################
+dist_scfa <- vegdist(scfa_mat, method = "bray")
+adonis_res <- adonis2(dist_scfa ~ meta_all$Diet, data = meta_all, permutations = 999)
+adonis_res
