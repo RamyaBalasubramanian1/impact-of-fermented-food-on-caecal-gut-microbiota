@@ -20,7 +20,7 @@ library(nparLD)
 library(car)
 ##feeding efficiency ratios
 setwd("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025")
-weight <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/mice_weights_compiled_WKKOM.csv", stringsAsFactors=T)
+weight <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/mice_weights_compiled_WKKOM.csv", stringsAsFactors=T)#load your csv file
 head(weight)
 data_wk <- weight
 ######################################
@@ -51,7 +51,7 @@ print(total_gain_per_week_wk)
 total_gain_per_week_wk_OG <- total_gain_per_week_wk[,-11]
 total_gain_per_week_wk <- total_gain_per_week_wk_OG
 #####################################
-weight <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/mice_weights_compiled_Saukim.csv", stringsAsFactors=T)
+weight <- read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/mice_weights_compiled_Saukim.csv", stringsAsFactors=T)#load your csv file
 head(weight)
 data_sk <- weight
 data_sk$delta_W2<- data_sk$W2 - data_sk$W1
@@ -76,7 +76,7 @@ subset_data_sk <- data_sk[ , c("Cage", "diet", delta_cols)]
 total_gain_per_week_sk_OG <- aggregate(. ~ Cage + diet, data = subset_data_sk, sum, na.rm = TRUE)
 total_gain_per_week_sk <- total_gain_per_week_sk_OG
 ################################################
-fer <-  read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/FER.csv", stringsAsFactors=T)
+fer <-  read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/FER.csv", stringsAsFactors=T)#load file
 fer <- fer[,-c(11,12)]
 #################################
 
@@ -193,6 +193,7 @@ posthoc <- emmeans(anova_model, pairwise ~ diet | Week, adjust = "bonferroni")
 #doing the same for sk
 ###########################################################################################
 fer <-  read.csv("C:/Users/Ramya.Balasubramania/Desktop/Thesis_Ramya_2025/chapter_2/raw_data/FER.csv", stringsAsFactors=T)
+#load csv file
 fer <- fer[,-c(11,12)]
 fer_sk <- fer %>% filter(diet %in% c("Sauerkraut", "Cabbage", "TM", "Kimchi", "Teklad-M"))
 fer_sk$Cage <- as.character(fer_sk$Cage)
